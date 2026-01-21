@@ -1,0 +1,5 @@
+https://developer.entur.org/stops-and-timetable-data
+
+Stops and Quays
+Complete datasets for Norway 
+GTFS

@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
+import { promises as fs } from "fs";
+import path from "path";
 
 const ENTUR_VM_ENDPOINT = "https://api.entur.io/realtime/v1/rest/vm";
 const ENTUR_REFRESH_MS = 15000;
 const ENTUR_RATE_LIMIT_WINDOW_MS = 60000;
 const ENTUR_RATE_LIMIT_MAX = 4;
+const NEARBY_STOP_RADIUS_METERS = 1000;
+
+type StopInfo = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+};
 
 type BusInfo = {
   id: string;
@@ -12,6 +22,7 @@ type BusInfo = {
   destination: string;
   latitude: number | null;
   longitude: number | null;
+  nearbyStops: StopInfo[];
 };
 
 type CacheEntry = {
@@ -22,6 +33,66 @@ type CacheEntry = {
 
 const operatorCache = new Map<string, CacheEntry>();
 const globalFetchTimestamps: number[] = [];
+
+let stopsCache: StopInfo[] | null = null;
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+
+const distanceInMeters = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+) => {
+  const earthRadius = 6371000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadius * c;
+};
+
+const loadStops = async (): Promise<StopInfo[]> => {
+  if (stopsCache) {
+    return stopsCache;
+  }
+  const filePath = path.join(
+    process.cwd(),
+    "src",
+    "app",
+    "api",
+    "data",
+    "stops.txt",
+  );
+  const content = await fs.readFile(filePath, "utf8");
+  const lines = content.split(/\r?\n/);
+  const stops: StopInfo[] = [];
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line) {
+      continue;
+    }
+    const columns = line.split(",");
+    if (columns.length < 4) {
+      continue;
+    }
+    const id = columns[0];
+    const name = columns[1];
+    const latitude = Number(columns[2]);
+    const longitude = Number(columns[3]);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      continue;
+    }
+    stops.push({ id, name, latitude, longitude });
+  }
+  stopsCache = stops;
+  return stops;
+};
 
 const normalizeText = (value: unknown): string => {
   if (Array.isArray(value)) {
@@ -193,13 +264,29 @@ const getAvailableBuses = async (operator: string, clientName: string) => {
   globalFetchTimestamps.push(now);
 
   const inFlight = fetchFromEntur(operator, clientName)
-    .then((data) => {
+    .then(async (data) => {
+      const stops = await loadStops();
+      const enriched = data.map((bus) => {
+        if (bus.latitude === null || bus.longitude === null) {
+          return { ...bus, nearbyStops: [] };
+        }
+        const nearbyStops = stops.filter((stop) => {
+          const distance = distanceInMeters(
+            bus.latitude as number,
+            bus.longitude as number,
+            stop.latitude,
+            stop.longitude,
+          );
+          return distance <= NEARBY_STOP_RADIUS_METERS;
+        });
+        return { ...bus, nearbyStops };
+      });
       operatorCache.set(operator, {
-        data,
+        data: enriched,
         fetchedAt: Date.now(),
         inFlight: null,
       });
-      return data;
+      return enriched;
     })
     .catch((error) => {
       operatorCache.set(operator, { ...entry, inFlight: null });

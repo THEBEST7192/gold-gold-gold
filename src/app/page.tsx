@@ -3,6 +3,13 @@
 import type L from "leaflet";
 import { useEffect, useRef, useState } from "react";
 
+type StopInfo = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
 type BusInfo = {
   id: string;
   name: string;
@@ -10,17 +17,21 @@ type BusInfo = {
   destination: string;
   latitude: number | null;
   longitude: number | null;
+  nearbyStops?: StopInfo[];
 };
 
 type BusMapProps = {
   latitude: number;
   longitude: number;
+  stops?: StopInfo[];
 };
 
-function BusMap({ latitude, longitude }: BusMapProps) {
+function BusMap({ latitude, longitude, stops }: BusMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
+  const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const stopsLayerRef = useRef<L.LayerGroup | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -54,8 +65,12 @@ function BusMap({ latitude, longitude }: BusMapProps) {
         })
         .addTo(map);
 
+      const stopsLayer = leaflet.layerGroup().addTo(map);
+
+      leafletRef.current = leaflet;
       mapRef.current = map;
       markerRef.current = marker;
+      stopsLayerRef.current = stopsLayer;
     };
 
     setup();
@@ -67,6 +82,8 @@ function BusMap({ latitude, longitude }: BusMapProps) {
       }
       mapRef.current = null;
       markerRef.current = null;
+      leafletRef.current = null;
+      stopsLayerRef.current = null;
     };
   }, []);
 
@@ -78,6 +95,35 @@ function BusMap({ latitude, longitude }: BusMapProps) {
     mapRef.current.setView(center);
     markerRef.current.setLatLng(center);
   }, [latitude, longitude]);
+
+  useEffect(() => {
+    if (!mapRef.current || !stopsLayerRef.current) {
+      return;
+    }
+    stopsLayerRef.current.clearLayers();
+    if (!stops || stops.length === 0) {
+      return;
+    }
+    if (!leafletRef.current) {
+      return;
+    }
+    const leaflet = leafletRef.current;
+    stops.forEach((stop) => {
+      const stopLatitude = stop.latitude;
+      const stopLongitude = stop.longitude;
+      if (!Number.isFinite(stopLatitude) || !Number.isFinite(stopLongitude)) {
+        return;
+      }
+      leaflet
+        .circleMarker([stopLatitude, stopLongitude], {
+          color: "#1e3a8a",
+          fillColor: "#93c5fd",
+          fillOpacity: 0.9,
+          radius: 3,
+        })
+        .addTo(stopsLayerRef.current as L.LayerGroup);
+    });
+  }, [stops]);
 
   return <div ref={containerRef} style={{ height: 180, width: "100%" }} />;
 }
@@ -346,6 +392,7 @@ export default function Home() {
                         <BusMap
                           latitude={bus.latitude}
                           longitude={bus.longitude}
+                          stops={bus.nearbyStops}
                         />
                       </div>
                     ) : (
