@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import type L from "leaflet";
+import { useEffect, useRef, useState } from "react";
 
 type BusInfo = {
   id: string;
@@ -11,12 +12,82 @@ type BusInfo = {
   longitude: number | null;
 };
 
+type BusMapProps = {
+  latitude: number;
+  longitude: number;
+};
+
+function BusMap({ latitude, longitude }: BusMapProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.CircleMarker | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) {
+      return;
+    }
+    let isMounted = true;
+
+    const setup = async () => {
+      const leafletModule = await import("leaflet");
+      const leaflet = leafletModule.default as typeof import("leaflet");
+      if (!isMounted || !containerRef.current) {
+        return;
+      }
+      const map = leaflet.map(containerRef.current, {
+        center: [latitude, longitude],
+        zoom: 14,
+        zoomControl: false,
+        attributionControl: true,
+      });
+      leaflet
+        .tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap contributors",
+        })
+        .addTo(map);
+      const marker = leaflet
+        .circleMarker([latitude, longitude], {
+          color: "#92400e",
+          fillColor: "#fbbf24",
+          fillOpacity: 0.9,
+          radius: 8,
+        })
+        .addTo(map);
+
+      mapRef.current = map;
+      markerRef.current = marker;
+    };
+
+    setup();
+
+    return () => {
+      isMounted = false;
+      if (mapRef.current) {
+        mapRef.current.remove();
+      }
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current || !markerRef.current) {
+      return;
+    }
+    const center: [number, number] = [latitude, longitude];
+    mapRef.current.setView(center);
+    markerRef.current.setLatLng(center);
+  }, [latitude, longitude]);
+
+  return <div ref={containerRef} style={{ height: 180, width: "100%" }} />;
+}
+
 export default function Home() {
   const [selectedOperator, setSelectedOperator] = useState("");
   const [isSelectOpen, setIsSelectOpen] = useState(false);
-  const [buses, setBuses] = useState<BusInfo[]>([]);
   const [availableBuses, setAvailableBuses] = useState<BusInfo[]>([]);
   const [trackedIds, setTrackedIds] = useState<string[]>([]);
+  const hasInitialSelectionRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
@@ -63,11 +134,11 @@ export default function Home() {
     }
     setTrackedIds([]);
     setAvailableBuses([]);
+    hasInitialSelectionRef.current = false;
   }, [selectedOperator]);
 
   useEffect(() => {
     if (!selectedOperator) {
-      setBuses([]);
       setAvailableBuses([]);
       setTrackedIds([]);
       setErrorMessage("");
@@ -92,7 +163,6 @@ export default function Home() {
         };
         if (payload.error) {
           setErrorMessage(payload.error);
-          setBuses([]);
           setAvailableBuses([]);
           setTrackedIds([]);
           setIsLoading(false);
@@ -100,23 +170,15 @@ export default function Home() {
         }
         const incomingAvailable = getUniqueBuses(payload.availableBuses ?? []);
         setAvailableBuses(incomingAvailable);
-        setTrackedIds((current) => {
-          const tracked = current.length
-            ? incomingAvailable.filter((bus) => current.includes(bus.id))
-            : [];
-          const remaining = incomingAvailable.filter(
-            (bus) => !current.includes(bus.id),
-          );
-          const filled =
-            tracked.length < 5
-              ? [
-                  ...tracked,
-                  ...pickRandom(remaining, 5 - tracked.length),
-                ].slice(0, 5)
-              : tracked.slice(0, 5);
-          setBuses(filled);
-          return filled.map((bus) => bus.id);
-        });
+
+        if (!hasInitialSelectionRef.current) {
+          if (incomingAvailable.length === 0) {
+          } else {
+            const initial = pickRandom(incomingAvailable, 5);
+            hasInitialSelectionRef.current = true;
+            setTrackedIds(initial.map((bus) => bus.id));
+          }
+        }
         setLastUpdated(payload.updatedAt ?? "");
         setErrorMessage("");
         setIsLoading(false);
@@ -138,9 +200,11 @@ export default function Home() {
     };
   }, [selectedOperator]);
 
+  const buses = availableBuses.filter((bus) => trackedIds.includes(bus.id));
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-amber-50 bg-[radial-gradient(circle_at_top,_#fef3c7,_#fbbf24_40%,_#78350f_120%)] font-serif">
-      <main className="w-full max-w-2xl rounded-2xl border-4 border-amber-900 bg-amber-50/90 px-10 py-10 text-center shadow-[0_24px_60px_rgba(0,0,0,0.4)]">
+      <main className="w-full max-w-5xl rounded-2xl border-4 border-amber-900 bg-amber-50/90 px-8 py-8 text-center shadow-[0_24px_60px_rgba(0,0,0,0.4)]">
         <div className="mb-8 space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-800">
             Grand Bus Derby
@@ -203,7 +267,7 @@ export default function Home() {
         </p>
 
         {selectedOperator ? (
-          <section className="mt-10 space-y-4 text-left">
+          <section className="mt-8 space-y-4 text-left">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900/80">
               <span>Live buses</span>
               <div className="flex flex-wrap items-center gap-2">
@@ -216,7 +280,6 @@ export default function Home() {
                     }
                     const nextBuses = pickRandom(options, 5);
                     setTrackedIds(nextBuses.map((bus) => bus.id));
-                    setBuses(nextBuses);
                   }}
                   className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-amber-900 transition hover:bg-amber-200"
                   disabled={availableBuses.length === 0}
@@ -235,51 +298,61 @@ export default function Home() {
             </div>
 
             {isLoading ? (
-              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-4 py-6 text-sm text-amber-900">
+              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-xs text-amber-900">
                 Fetching the starting grid...
               </div>
             ) : errorMessage ? (
-              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-4 py-6 text-sm text-amber-900">
+              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-xs text-amber-900">
                 {errorMessage}
               </div>
             ) : buses.length === 0 ? (
-              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-4 py-6 text-sm text-amber-900">
-                No buses available in this zone right now.
+              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-xs text-amber-900">
+                {trackedIds.length === 0
+                  ? "Waiting for buses in this zone."
+                  : "No buses available in this zone right now."}
               </div>
             ) : (
-              <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {buses.map((bus) => (
                   <article
                     key={bus.id}
-                    className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-5 py-4 shadow-inner"
+                    className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-3 text-xs shadow-inner"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="text-base font-semibold text-amber-950">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-sm font-semibold text-amber-950">
                         {bus.name}
                       </h2>
-                      <span className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
-                        Coordinates {formatCoordinate(bus.latitude)},{" "}
-                        {formatCoordinate(bus.longitude)}
-                      </span>
                     </div>
-                    <div className="mt-3 grid gap-2 text-sm text-amber-900">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                    <div className="mt-2 space-y-2 text-[11px] text-amber-900">
+                      <div>
+                        <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-800">
                           Current stop
                         </span>
-                        <span className="text-sm font-medium text-amber-950">
+                        <span className="block text-sm font-medium text-amber-950">
                           {bus.currentStop}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                      <div>
+                        <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-800">
                           Destination
                         </span>
-                        <span className="text-sm font-medium text-amber-950">
+                        <span className="block text-sm font-medium text-amber-950">
                           {bus.destination}
                         </span>
                       </div>
                     </div>
+                    {bus.latitude !== null && bus.longitude !== null ? (
+                      <div className="mt-3 overflow-hidden rounded-xl border border-amber-900/30">
+                        <BusMap
+                          latitude={bus.latitude}
+                          longitude={bus.longitude}
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-xl border border-amber-900/20 bg-amber-100/80 px-3 py-2 text-xs text-amber-900">
+                        No coordinates available for this bus.
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>

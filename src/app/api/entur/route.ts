@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
 const ENTUR_VM_ENDPOINT = "https://api.entur.io/realtime/v1/rest/vm";
+const ENTUR_REFRESH_MS = 15000;
+const ENTUR_RATE_LIMIT_WINDOW_MS = 60000;
+const ENTUR_RATE_LIMIT_MAX = 4;
 
 type BusInfo = {
   id: string;
@@ -10,6 +13,15 @@ type BusInfo = {
   latitude: number | null;
   longitude: number | null;
 };
+
+type CacheEntry = {
+  data: BusInfo[];
+  fetchedAt: number;
+  inFlight: Promise<BusInfo[]> | null;
+};
+
+const operatorCache = new Map<string, CacheEntry>();
+const globalFetchTimestamps: number[] = [];
 
 const normalizeText = (value: unknown): string => {
   if (Array.isArray(value)) {
@@ -124,7 +136,7 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
     .filter((entry): entry is BusInfo => Boolean(entry));
 };
 
-const getAvailableBuses = async (operator: string, clientName: string) => {
+const fetchFromEntur = async (operator: string, clientName: string) => {
   const url = new URL(ENTUR_VM_ENDPOINT);
   url.searchParams.set("datasetId", operator);
   url.searchParams.set("maxSize", "1500");
@@ -144,6 +156,58 @@ const getAvailableBuses = async (operator: string, clientName: string) => {
 
   const payload = (await response.json()) as Record<string, unknown>;
   return extractBuses(payload);
+};
+
+const getAvailableBuses = async (operator: string, clientName: string) => {
+  const now = Date.now();
+  const entry = operatorCache.get(operator) ?? {
+    data: [],
+    fetchedAt: 0,
+    inFlight: null,
+  };
+
+  if (entry.inFlight) {
+    return entry.inFlight;
+  }
+
+  if (entry.data.length > 0 && now - entry.fetchedAt < ENTUR_REFRESH_MS) {
+    operatorCache.set(operator, entry);
+    return entry.data;
+  }
+
+  while (
+    globalFetchTimestamps.length > 0 &&
+    now - globalFetchTimestamps[0] > ENTUR_RATE_LIMIT_WINDOW_MS
+  ) {
+    globalFetchTimestamps.shift();
+  }
+
+  if (globalFetchTimestamps.length >= ENTUR_RATE_LIMIT_MAX) {
+    if (entry.data.length > 0) {
+      operatorCache.set(operator, entry);
+      return entry.data;
+    }
+    throw new Error("Rate limit reached. Waiting before retrying.");
+  }
+
+  globalFetchTimestamps.push(now);
+
+  const inFlight = fetchFromEntur(operator, clientName)
+    .then((data) => {
+      operatorCache.set(operator, {
+        data,
+        fetchedAt: Date.now(),
+        inFlight: null,
+      });
+      return data;
+    })
+    .catch((error) => {
+      operatorCache.set(operator, { ...entry, inFlight: null });
+      throw error;
+    });
+
+  operatorCache.set(operator, { ...entry, inFlight });
+  return inFlight;
 };
 
 export async function GET(request: Request) {
@@ -195,7 +259,7 @@ export async function GET(request: Request) {
       };
 
       fetchAndSend();
-      intervalId = setInterval(fetchAndSend, 15000);
+      intervalId = setInterval(fetchAndSend, ENTUR_REFRESH_MS);
 
       request.signal.addEventListener("abort", () => {
         if (intervalId) {
