@@ -32,6 +32,7 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
   const markerRef = useRef<L.CircleMarker | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const stopsLayerRef = useRef<L.LayerGroup | null>(null);
+  const trailRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -56,6 +57,17 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
           attribution: "© OpenStreetMap contributors",
         })
         .addTo(map);
+
+      const stopsLayer = leaflet.layerGroup().addTo(map);
+
+      const trail = leaflet
+        .polyline([[latitude, longitude]], {
+          color: "#b91c1c",
+          weight: 3,
+          opacity: 0.9,
+        })
+        .addTo(map);
+
       const marker = leaflet
         .circleMarker([latitude, longitude], {
           color: "#92400e",
@@ -65,12 +77,11 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
         })
         .addTo(map);
 
-      const stopsLayer = leaflet.layerGroup().addTo(map);
-
       leafletRef.current = leaflet;
       mapRef.current = map;
       markerRef.current = marker;
       stopsLayerRef.current = stopsLayer;
+      trailRef.current = trail;
     };
 
     setup();
@@ -84,6 +95,7 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
       markerRef.current = null;
       leafletRef.current = null;
       stopsLayerRef.current = null;
+      trailRef.current = null;
     };
   }, []);
 
@@ -94,6 +106,10 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
     const center: [number, number] = [latitude, longitude];
     mapRef.current.setView(center);
     markerRef.current.setLatLng(center);
+    if (trailRef.current) {
+      trailRef.current.addLatLng([latitude, longitude]);
+    }
+    markerRef.current.bringToFront();
   }, [latitude, longitude]);
 
   useEffect(() => {
@@ -123,6 +139,9 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
         })
         .addTo(stopsLayerRef.current as L.LayerGroup);
     });
+    if (markerRef.current) {
+      markerRef.current.bringToFront();
+    }
   }, [stops]);
 
   return <div ref={containerRef} style={{ height: 180, width: "100%" }} />;
