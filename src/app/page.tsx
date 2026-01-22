@@ -8,6 +8,7 @@ type StopInfo = {
   name: string;
   latitude: number;
   longitude: number;
+  isDestination?: boolean;
 };
 
 type BusInfo = {
@@ -15,6 +16,7 @@ type BusInfo = {
   name: string;
   currentStop: string;
   destination: string;
+  destinationStopId: string | undefined;
   latitude: number | null;
   longitude: number | null;
   nearbyStops?: StopInfo[];
@@ -30,9 +32,10 @@ type BusMapProps = {
   latitude: number;
   longitude: number;
   stops?: StopInfo[];
+   trackEnabled: boolean;
 };
 
-function BusMap({ latitude, longitude, stops }: BusMapProps) {
+function BusMap({ latitude, longitude, stops, trackEnabled }: BusMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
@@ -67,10 +70,11 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
       const stopsLayer = leaflet.layerGroup().addTo(map);
 
       const trail = leaflet
-        .polyline([[latitude, longitude]], {
+        .polyline([], {
           color: "#b91c1c",
           weight: 3,
           opacity: 0.9,
+          dashArray: "6 4",
         })
         .addTo(map);
 
@@ -112,11 +116,20 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
     const center: [number, number] = [latitude, longitude];
     mapRef.current.setView(center);
     markerRef.current.setLatLng(center);
-    if (trailRef.current) {
+    if (trailRef.current && trackEnabled) {
       trailRef.current.addLatLng([latitude, longitude]);
     }
     markerRef.current.bringToFront();
-  }, [latitude, longitude]);
+  }, [latitude, longitude, trackEnabled]);
+
+  useEffect(() => {
+    if (!trailRef.current) {
+      return;
+    }
+    if (!trackEnabled) {
+      trailRef.current.setLatLngs([]);
+    }
+  }, [trackEnabled]);
 
   useEffect(() => {
     if (!mapRef.current || !stopsLayerRef.current) {
@@ -130,20 +143,34 @@ function BusMap({ latitude, longitude, stops }: BusMapProps) {
       return;
     }
     const leaflet = leafletRef.current;
+    const destinationIcon = leaflet.divIcon({
+      className: "",
+      html: "🚩",
+      iconSize: [16, 16],
+      iconAnchor: [8, 16],
+    });
     stops.forEach((stop) => {
       const stopLatitude = stop.latitude;
       const stopLongitude = stop.longitude;
       if (!Number.isFinite(stopLatitude) || !Number.isFinite(stopLongitude)) {
         return;
       }
-      leaflet
-        .circleMarker([stopLatitude, stopLongitude], {
-          color: "#1e3a8a",
-          fillColor: "#93c5fd",
-          fillOpacity: 0.9,
-          radius: 3,
-        })
-        .addTo(stopsLayerRef.current as L.LayerGroup);
+      if (stop.isDestination) {
+        leaflet
+          .marker([stopLatitude, stopLongitude], {
+            icon: destinationIcon,
+          })
+          .addTo(stopsLayerRef.current as L.LayerGroup);
+      } else {
+        leaflet
+          .circleMarker([stopLatitude, stopLongitude], {
+            color: "#1e3a8a",
+            fillColor: "#93c5fd",
+            fillOpacity: 0.9,
+            radius: 3,
+          })
+          .addTo(stopsLayerRef.current as L.LayerGroup);
+      }
     });
     if (markerRef.current) {
       markerRef.current.bringToFront();
@@ -168,6 +195,7 @@ export default function Home() {
       { distance: number; lastLatitude: number | null; lastLongitude: number | null }
     >
   >({});
+  const [raceStarted, setRaceStarted] = useState(false);
   const [players, setPlayers] = useState<Player[]>([
     { id: "1", name: "Player 1", betBusId: "" },
     { id: "2", name: "Player 2", betBusId: "" },
@@ -238,12 +266,16 @@ export default function Home() {
     setAvailableBuses([]);
     hasInitialSelectionRef.current = false;
     setBusStats({});
+    setRaceStarted(false);
     setPlayers((previous) =>
       previous.map((player) => ({ ...player, betBusId: "" })),
     );
   }, [selectedOperator]);
 
   useEffect(() => {
+    if (!raceStarted) {
+      return;
+    }
     setBusStats((previous) => {
       const next = { ...previous };
       availableBuses.forEach((bus) => {
@@ -278,9 +310,9 @@ export default function Home() {
           lastLongitude: longitude,
         };
       });
-    return next;
+      return next;
     });
-  }, [availableBuses]);
+  }, [availableBuses, raceStarted]);
 
   useEffect(() => {
     if (!selectedOperator) {
@@ -354,7 +386,7 @@ export default function Home() {
     }))
     .sort((first, second) => second.distance - first.distance);
 
-  const leader = rankedBuses[0]?.bus;
+  const leader = raceStarted ? rankedBuses[0]?.bus : undefined;
 
   const positionByBusId: Record<string, number> = {};
   rankedBuses.forEach((entry, index) => {
@@ -443,6 +475,7 @@ export default function Home() {
                     setPlayers((previous) =>
                       previous.map((player) => ({ ...player, betBusId: "" })),
                     );
+                    setRaceStarted(false);
                   }}
                   className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 transition hover:bg-amber-200"
                   disabled={availableBuses.length === 0}
@@ -482,6 +515,40 @@ export default function Home() {
                       </p>
                     ) : null}
                   </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900/80">
+                  <span>{raceStarted ? "Race running" : "Race not started"}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBusStats(() => {
+                        const next: Record<
+                          string,
+                          {
+                            distance: number;
+                            lastLatitude: number | null;
+                            lastLongitude: number | null;
+                          }
+                        > = {};
+                        availableBuses.forEach((bus) => {
+                          if (bus.latitude === null || bus.longitude === null) {
+                            return;
+                          }
+                          next[bus.id] = {
+                            distance: 0,
+                            lastLatitude: bus.latitude,
+                            lastLongitude: bus.longitude,
+                          };
+                        });
+                        return next;
+                      });
+                      setRaceStarted(true);
+                    }}
+                    disabled={raceStarted || buses.length === 0}
+                    className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 shadow-inner transition hover:bg-amber-200 disabled:opacity-40"
+                  >
+                    {raceStarted ? "Race running" : "Start race"}
+                  </button>
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {players.map((player, index) => {
@@ -533,20 +600,24 @@ export default function Home() {
                           ))}
                         </select>
                         <div className="text-sm">
-                          {bus ? (
-                            position ? (
-                              <span>
-                                {position === 1
-                                  ? "Leading"
-                                  : `Position ${position} of ${
-                                      rankedBuses.length
-                                    }`}
-                              </span>
+                          {raceStarted ? (
+                            bus ? (
+                              position ? (
+                                <span>
+                                  {position === 1
+                                    ? "Leading"
+                                    : `Position ${position} of ${
+                                        rankedBuses.length
+                                      }`}
+                                </span>
+                              ) : (
+                                <span>Bus not in race</span>
+                              )
                             ) : (
-                              <span>Bus not in race</span>
+                              <span>No bus selected</span>
                             )
                           ) : (
-                            <span>No bus selected</span>
+                            <span>Race not started</span>
                           )}
                         </div>
                         <button
@@ -643,6 +714,7 @@ export default function Home() {
                           latitude={bus.latitude}
                           longitude={bus.longitude}
                           stops={bus.nearbyStops}
+                          trackEnabled={raceStarted}
                         />
                       </div>
                     ) : (

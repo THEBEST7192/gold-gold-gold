@@ -13,6 +13,7 @@ type StopInfo = {
   name: string;
   latitude: number;
   longitude: number;
+  isDestination?: boolean;
 };
 
 type BusInfo = {
@@ -20,9 +21,10 @@ type BusInfo = {
   name: string;
   currentStop: string;
   destination: string;
+  destinationStopId: string | undefined;
   latitude: number | null;
   longitude: number | null;
-  nearbyStops: StopInfo[];
+  nearbyStops?: StopInfo[];
 };
 
 type CacheEntry = {
@@ -145,8 +147,8 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
     ),
   );
 
-  return activities
-    .map((activity, index) => {
+  const buses = activities
+    .map((activity, index): BusInfo | null => {
       const journey = (activity as { MonitoredVehicleJourney?: unknown })
         .MonitoredVehicleJourney as Record<string, unknown> | undefined;
       if (!journey) {
@@ -177,9 +179,12 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
         normalizeText(journey.VehicleRef) ||
         "Unknown line";
 
+      const rawDestinationRef = journey.DestinationRef;
+      const destinationStopId = normalizeText(rawDestinationRef);
+
       const destination =
         normalizeText(journey.DestinationName) ||
-        normalizeText(journey.DestinationRef) ||
+        normalizeText(rawDestinationRef) ||
         "Unknown destination";
 
       const monitoredCall = journey.MonitoredCall as
@@ -195,16 +200,20 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
         normalizeText((activity as { ItemIdentifier?: unknown }).ItemIdentifier) ||
         `${name}-${index}`;
 
-      return {
+      const bus: BusInfo = {
         id,
         name,
         currentStop,
         destination,
+        destinationStopId: destinationStopId || undefined,
         latitude,
         longitude,
       };
+      return bus;
     })
-    .filter((entry): entry is BusInfo => Boolean(entry));
+    .filter((entry): entry is BusInfo => entry !== null);
+
+  return buses;
 };
 
 const fetchFromEntur = async (operator: string, clientName: string) => {
@@ -270,7 +279,7 @@ const getAvailableBuses = async (operator: string, clientName: string) => {
         if (bus.latitude === null || bus.longitude === null) {
           return { ...bus, nearbyStops: [] };
         }
-        const nearbyStops = stops.filter((stop) => {
+        const nearbyStopsBase = stops.filter((stop) => {
           const distance = distanceInMeters(
             bus.latitude as number,
             bus.longitude as number,
@@ -279,6 +288,57 @@ const getAvailableBuses = async (operator: string, clientName: string) => {
           );
           return distance <= NEARBY_STOP_RADIUS_METERS;
         });
+        const nearbyStops: StopInfo[] = [...nearbyStopsBase];
+
+        let destinationStop: StopInfo | null = null;
+
+        if (bus.destinationStopId) {
+          destinationStop =
+            nearbyStops.find(
+              (stop) => stop.id === bus.destinationStopId,
+            ) ??
+            stops.find((stop) => stop.id === bus.destinationStopId) ??
+            null;
+          if (
+            destinationStop &&
+            !nearbyStops.some((stop) => stop.id === destinationStop!.id)
+          ) {
+            nearbyStops.push(destinationStop);
+          }
+        }
+
+        if (!destinationStop) {
+          const destinationName = bus.destination.toLowerCase();
+          if (destinationName && destinationName !== "unknown destination") {
+            destinationStop =
+              nearbyStops.find(
+                (stop) => stop.name.toLowerCase() === destinationName,
+              ) ??
+              stops.find(
+                (stop) => stop.name.toLowerCase() === destinationName,
+              ) ??
+              null;
+            if (
+              destinationStop &&
+              !nearbyStops.some((stop) => stop.id === destinationStop!.id)
+            ) {
+              nearbyStops.push(destinationStop);
+            }
+          }
+        }
+
+        if (!destinationStop && nearbyStops.length > 0) {
+          destinationStop = nearbyStops[0];
+        }
+
+        if (destinationStop) {
+          for (let index = 0; index < nearbyStops.length; index += 1) {
+            const stop = nearbyStops[index];
+            if (stop.id === destinationStop.id) {
+              nearbyStops[index] = { ...stop, isDestination: true };
+            }
+          }
+        }
         return { ...bus, nearbyStops };
       });
       operatorCache.set(operator, {
