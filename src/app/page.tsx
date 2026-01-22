@@ -20,6 +20,12 @@ type BusInfo = {
   nearbyStops?: StopInfo[];
 };
 
+type Player = {
+  id: string;
+  name: string;
+  betBusId: string;
+};
+
 type BusMapProps = {
   latitude: number;
   longitude: number;
@@ -156,6 +162,16 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
+  const [busStats, setBusStats] = useState<
+    Record<
+      string,
+      { distance: number; lastLatitude: number | null; lastLongitude: number | null }
+    >
+  >({});
+  const [players, setPlayers] = useState<Player[]>([
+    { id: "1", name: "Player 1", betBusId: "" },
+    { id: "2", name: "Player 2", betBusId: "" },
+  ]);
 
   const operators = [
     { code: "AKT", label: "AKT – Agder (AKT)" },
@@ -193,6 +209,27 @@ export default function Home() {
   const getUniqueBuses = (items: BusInfo[]) =>
     Array.from(new Map(items.map((bus) => [bus.id, bus])).values());
 
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+
+  const distanceInMeters = (
+    latitudeA: number,
+    longitudeA: number,
+    latitudeB: number,
+    longitudeB: number,
+  ) => {
+    const earthRadius = 6371000;
+    const latitudeDifference = toRadians(latitudeB - latitudeA);
+    const longitudeDifference = toRadians(longitudeB - longitudeA);
+    const a =
+      Math.sin(latitudeDifference / 2) * Math.sin(latitudeDifference / 2) +
+      Math.cos(toRadians(latitudeA)) *
+        Math.cos(toRadians(latitudeB)) *
+        Math.sin(longitudeDifference / 2) *
+        Math.sin(longitudeDifference / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+  };
+
   useEffect(() => {
     if (!selectedOperator) {
       return;
@@ -200,7 +237,50 @@ export default function Home() {
     setTrackedIds([]);
     setAvailableBuses([]);
     hasInitialSelectionRef.current = false;
+    setBusStats({});
+    setPlayers((previous) =>
+      previous.map((player) => ({ ...player, betBusId: "" })),
+    );
   }, [selectedOperator]);
+
+  useEffect(() => {
+    setBusStats((previous) => {
+      const next = { ...previous };
+      availableBuses.forEach((bus) => {
+        if (bus.latitude === null || bus.longitude === null) {
+          return;
+        }
+        const latitude = bus.latitude;
+        const longitude = bus.longitude;
+        const existing = next[bus.id];
+        if (
+          !existing ||
+          existing.lastLatitude === null ||
+          existing.lastLongitude === null
+        ) {
+          next[bus.id] = {
+            distance: existing ? existing.distance : 0,
+            lastLatitude: latitude,
+            lastLongitude: longitude,
+          };
+          return;
+        }
+        const delta = distanceInMeters(
+          existing.lastLatitude,
+          existing.lastLongitude,
+          latitude,
+          longitude,
+        );
+        const safeDelta = Number.isFinite(delta) ? Math.max(delta, 0) : 0;
+        next[bus.id] = {
+          distance: existing.distance + safeDelta,
+          lastLatitude: latitude,
+          lastLongitude: longitude,
+        };
+      });
+    return next;
+    });
+  }, [availableBuses]);
 
   useEffect(() => {
     if (!selectedOperator) {
@@ -266,6 +346,20 @@ export default function Home() {
   }, [selectedOperator]);
 
   const buses = availableBuses.filter((bus) => trackedIds.includes(bus.id));
+
+  const rankedBuses = buses
+    .map((bus) => ({
+      bus,
+      distance: busStats[bus.id]?.distance ?? 0,
+    }))
+    .sort((first, second) => second.distance - first.distance);
+
+  const leader = rankedBuses[0]?.bus;
+
+  const positionByBusId: Record<string, number> = {};
+  rankedBuses.forEach((entry, index) => {
+    positionByBusId[entry.bus.id] = index;
+  });
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-amber-50 bg-[radial-gradient(circle_at_top,_#fef3c7,_#fbbf24_40%,_#78350f_120%)] font-serif">
@@ -345,8 +439,12 @@ export default function Home() {
                     }
                     const nextBuses = pickRandom(options, 5);
                     setTrackedIds(nextBuses.map((bus) => bus.id));
+                    setBusStats({});
+                    setPlayers((previous) =>
+                      previous.map((player) => ({ ...player, betBusId: "" })),
+                    );
                   }}
-                  className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-amber-900 transition hover:bg-amber-200"
+                  className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 transition hover:bg-amber-200"
                   disabled={availableBuses.length === 0}
                 >
                   Shuffle buses
@@ -362,16 +460,149 @@ export default function Home() {
               </div>
             </div>
 
+            {buses.length > 0 ? (
+              <div className="rounded-xl border border-amber-900/40 bg-amber-100/70 px-3 py-3 text-sm text-amber-900">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-800">
+                      Players and bets
+                    </p>
+                    <p className="text-sm">
+                      Each player chooses one of the five buses. The leader is the one
+                      that has traveled the longest distance while you watch.
+                    </p>
+                  </div>
+                  <div className="text-right text-sm">
+                    {leader ? (
+                      <p>
+                        Leader:{" "}
+                        <span className="font-semibold text-amber-950">
+                          {leader.name}
+                        </span>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {players.map((player, index) => {
+                    const bus =
+                      buses.find((candidate) => candidate.id === player.betBusId) ??
+                      null;
+                    const position =
+                      bus && player.betBusId in positionByBusId
+                        ? positionByBusId[player.betBusId] + 1
+                        : null;
+                    return (
+                      <div
+                        key={player.id}
+                        className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1fr)_auto] items-center gap-2"
+                      >
+                        <input
+                          value={player.name}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setPlayers((previous) =>
+                              previous.map((entry, entryIndex) =>
+                                entryIndex === index
+                                  ? { ...entry, name: value }
+                                  : entry,
+                              ),
+                            );
+                          }}
+                          className="h-7 rounded border border-amber-900/40 bg-amber-50 px-2 text-sm font-medium text-amber-950 shadow-inner outline-none"
+                        />
+                        <select
+                          value={player.betBusId}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setPlayers((previous) =>
+                              previous.map((entry, entryIndex) =>
+                                entryIndex === index
+                                  ? { ...entry, betBusId: value }
+                                  : entry,
+                              ),
+                            );
+                          }}
+                          className="h-7 w-full rounded border border-amber-900/40 bg-amber-50 px-2 text-sm text-amber-950 shadow-inner outline-none"
+                        >
+                          <option value="">No bet</option>
+                          {buses.map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>
+                              {candidate.name}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="text-sm">
+                          {bus ? (
+                            position ? (
+                              <span>
+                                {position === 1
+                                  ? "Leading"
+                                  : `Position ${position} of ${
+                                      rankedBuses.length
+                                    }`}
+                              </span>
+                            ) : (
+                              <span>Bus not in race</span>
+                            )
+                          ) : (
+                            <span>No bus selected</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPlayers((previous) =>
+                              previous.filter(
+                                (_entry, entryIndex) => entryIndex !== index,
+                              ),
+                            );
+                          }}
+                          disabled={players.length <= 1}
+                          className="h-7 w-7 rounded-full border border-amber-900/40 bg-amber-50 text-xs font-semibold text-amber-900 shadow-inner transition hover:bg-amber-200 disabled:opacity-40"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {players.length < 6 ? (
+                  <div className="mt-2 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlayers((previous) => {
+                          const identifier = String(previous.length + 1);
+                          return [
+                            ...previous,
+                            {
+                              id: identifier,
+                              name: `Player ${identifier}`,
+                              betBusId: "",
+                            },
+                          ];
+                        });
+                      }}
+                      className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 transition hover:bg-amber-200"
+                    >
+                      Add player
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {isLoading ? (
-              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-xs text-amber-900">
+              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-sm text-amber-900">
                 Fetching the starting grid...
               </div>
             ) : errorMessage ? (
-              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-xs text-amber-900">
+              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-sm text-amber-900">
                 {errorMessage}
               </div>
             ) : buses.length === 0 ? (
-              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-xs text-amber-900">
+              <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-sm text-amber-900">
                 {trackedIds.length === 0
                   ? "Waiting for buses in this zone."
                   : "No buses available in this zone right now."}
@@ -381,16 +612,16 @@ export default function Home() {
                 {buses.map((bus) => (
                   <article
                     key={bus.id}
-                    className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-3 text-xs shadow-inner"
+                    className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-3 text-sm shadow-inner"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-sm font-semibold text-amber-950">
                         {bus.name}
                       </h2>
                     </div>
-                    <div className="mt-2 space-y-2 text-[11px] text-amber-900">
+                    <div className="mt-2 space-y-2 text-sm text-amber-900">
                       <div>
-                        <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-800">
+                        <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
                           Current stop
                         </span>
                         <span className="block text-sm font-medium text-amber-950">
@@ -398,7 +629,7 @@ export default function Home() {
                         </span>
                       </div>
                       <div>
-                        <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-800">
+                        <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
                           Destination
                         </span>
                         <span className="block text-sm font-medium text-amber-950">
@@ -415,7 +646,7 @@ export default function Home() {
                         />
                       </div>
                     ) : (
-                      <div className="mt-4 rounded-xl border border-amber-900/20 bg-amber-100/80 px-3 py-2 text-xs text-amber-900">
+                      <div className="mt-4 rounded-xl border border-amber-900/20 bg-amber-100/80 px-3 py-2 text-sm text-amber-900">
                         No coordinates available for this bus.
                       </div>
                     )}
