@@ -225,6 +225,16 @@ export default function Home() {
   const formatCoordinate = (value: number | null) =>
     value === null ? "—" : value.toFixed(5);
 
+  const formatDistance = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) {
+      return "0 m";
+    }
+    if (value >= 1000) {
+      return `${(value / 1000).toFixed(1)} km`;
+    }
+    return `${Math.round(value)} m`;
+  };
+
   const pickRandom = <T,>(items: T[], count: number): T[] => {
     const copy = [...items];
     for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -680,50 +690,78 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {buses.map((bus) => (
-                  <article
-                    key={bus.id}
-                    className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-3 text-sm shadow-inner"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-sm font-semibold text-amber-950">
-                        {bus.name}
-                      </h2>
-                    </div>
-                    <div className="mt-2 space-y-2 text-sm text-amber-900">
-                      <div>
-                        <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
-                          Current stop
-                        </span>
-                        <span className="block text-sm font-medium text-amber-950">
-                          {bus.currentStop}
-                        </span>
+                {buses.map((bus) => {
+                  const distance = busStats[bus.id]?.distance ?? 0;
+                  const betters = players.filter(
+                    (player) => player.betBusId === bus.id,
+                  );
+                  return (
+                    <article
+                      key={bus.id}
+                      className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-3 text-sm shadow-inner"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-sm font-semibold text-amber-950">
+                          {bus.name}
+                        </h2>
                       </div>
-                      <div>
-                        <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
-                          Destination
-                        </span>
-                        <span className="block text-sm font-medium text-amber-950">
-                          {bus.destination}
-                        </span>
+                      <div className="mt-2 space-y-2 text-sm text-amber-900">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                              Current stop
+                            </span>
+                            <span className="block text-sm font-medium text-amber-950">
+                              {bus.currentStop}
+                            </span>
+                          </div>
+                          <div className="ml-auto w-1/2 text-right">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                              Betters
+                            </span>
+                            <span className="mt-1 block text-sm font-medium text-amber-950">
+                              {betters.length > 0
+                                ? betters.map((player) => player.name).join(", ")
+                                : "None"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                              Destination
+                            </span>
+                            <span className="block text-sm font-medium text-amber-950">
+                              {bus.destination}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                              Distance
+                            </span>
+                            <span className="block text-sm font-medium text-amber-950">
+                              {formatDistance(distance)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    {bus.latitude !== null && bus.longitude !== null ? (
-                      <div className="mt-3 overflow-hidden rounded-xl border border-amber-900/30">
-                        <BusMap
-                          latitude={bus.latitude}
-                          longitude={bus.longitude}
-                          stops={bus.nearbyStops}
-                          trackEnabled={raceStarted}
-                        />
-                      </div>
-                    ) : (
-                      <div className="mt-4 rounded-xl border border-amber-900/20 bg-amber-100/80 px-3 py-2 text-sm text-amber-900">
-                        No coordinates available for this bus.
-                      </div>
-                    )}
-                  </article>
-                ))}
+                      {bus.latitude !== null && bus.longitude !== null ? (
+                        <div className="mt-3 overflow-hidden rounded-xl border border-amber-900/30">
+                          <BusMap
+                            latitude={bus.latitude}
+                            longitude={bus.longitude}
+                            stops={bus.nearbyStops}
+                            trackEnabled={raceStarted}
+                          />
+                        </div>
+                      ) : (
+                        <div className="mt-4 rounded-xl border border-amber-900/20 bg-amber-100/80 px-3 py-2 text-sm text-amber-900">
+                          No coordinates available for this bus.
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
