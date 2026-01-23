@@ -3,12 +3,12 @@ import { promises as fs } from "fs";
 import path from "path";
 
 const ENTUR_VM_ENDPOINT = "https://api.entur.io/realtime/v1/rest/vm";
-const ENTUR_REFRESH_MS = 15000;
+const ENTUR_REFRESH_MS = 20000;
 const ENTUR_RATE_LIMIT_WINDOW_MS = 60000;
 const ENTUR_RATE_LIMIT_MAX = 4;
 const NEARBY_STOP_RADIUS_METERS = 1000;
 
-type StopInfo = {
+export type StopInfo = {
   id: string;
   name: string;
   latitude: number;
@@ -16,7 +16,7 @@ type StopInfo = {
   isDestination?: boolean;
 };
 
-type BusInfo = {
+export type BusInfo = {
   id: string;
   name: string;
   currentStop: string;
@@ -37,6 +37,14 @@ const operatorCache = new Map<string, CacheEntry>();
 const globalFetchTimestamps: number[] = [];
 
 let stopsCache: StopInfo[] | null = null;
+let activeStreams = 0;
+
+const requestorIdByOperator = new Map<string, string>();
+
+const createRequestorId = (operator: string) =>
+  `${operator}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
 
@@ -221,6 +229,13 @@ const fetchFromEntur = async (operator: string, clientName: string) => {
   url.searchParams.set("datasetId", operator);
   url.searchParams.set("maxSize", "1500");
 
+  let requestorId = requestorIdByOperator.get(operator);
+  if (!requestorId) {
+    requestorId = createRequestorId(operator);
+    requestorIdByOperator.set(operator, requestorId);
+  }
+  url.searchParams.set("requestorId", requestorId);
+
   const response = await fetch(url.toString(), {
     headers: {
       "ET-Client-Name": clientName,
@@ -238,7 +253,10 @@ const fetchFromEntur = async (operator: string, clientName: string) => {
   return extractBuses(payload);
 };
 
-const getAvailableBuses = async (operator: string, clientName: string) => {
+export const getAvailableBuses = async (
+  operator: string,
+  clientName: string,
+) => {
   const now = Date.now();
   const entry = operatorCache.get(operator) ?? {
     data: [],
@@ -376,8 +394,17 @@ export async function GET(request: Request) {
     );
   }
 
+  if (activeStreams >= 4) {
+    return NextResponse.json(
+      { error: "Too many active streams. Please try again later." },
+      { status: 429 },
+    );
+  }
+
   const encoder = new TextEncoder();
   let intervalId: ReturnType<typeof setInterval> | null = null;
+
+  activeStreams += 1;
 
   const stream = new ReadableStream({
     start(controller) {
@@ -412,12 +439,18 @@ export async function GET(request: Request) {
         if (intervalId) {
           clearInterval(intervalId);
         }
+        if (activeStreams > 0) {
+          activeStreams -= 1;
+        }
         controller.close();
       });
     },
     cancel() {
       if (intervalId) {
         clearInterval(intervalId);
+      }
+      if (activeStreams > 0) {
+        activeStreams -= 1;
       }
     },
   });
