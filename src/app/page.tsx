@@ -126,7 +126,7 @@ function BusMap({ latitude, longitude, stops, trackEnabled }: BusMapProps) {
     if (!trailRef.current) {
       return;
     }
-    if (!trackEnabled) {
+    if (trackEnabled) {
       trailRef.current.setLatLngs([]);
     }
   }, [trackEnabled]);
@@ -196,6 +196,12 @@ export default function Home() {
     >
   >({});
   const [raceStarted, setRaceStarted] = useState(false);
+  const [betDurationMinutes, setBetDurationMinutes] = useState(5);
+  const [betEndTime, setBetEndTime] = useState<number | null>(null);
+  const [betRemainingSeconds, setBetRemainingSeconds] = useState<number | null>(
+    null,
+  );
+  const [betFinished, setBetFinished] = useState(false);
   const [players, setPlayers] = useState<Player[]>([
     { id: "1", name: "Player 1", betBusId: "" },
     { id: "2", name: "Player 2", betBusId: "" },
@@ -233,6 +239,21 @@ export default function Home() {
       return `${(value / 1000).toFixed(1)} km`;
     }
     return `${Math.round(value)} m`;
+  };
+
+  const formatRemainingSeconds = (value: number | null) => {
+    if (value === null) {
+      return "";
+    }
+    if (value <= 0) {
+      return "0s";
+    }
+    const minutes = Math.floor(value / 60);
+    const seconds = value % 60;
+    if (minutes <= 0) {
+      return `${seconds}s`;
+    }
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
   const pickRandom = <T,>(items: T[], count: number): T[] => {
@@ -277,6 +298,9 @@ export default function Home() {
     hasInitialSelectionRef.current = false;
     setBusStats({});
     setRaceStarted(false);
+    setBetEndTime(null);
+    setBetRemainingSeconds(null);
+    setBetFinished(false);
     setPlayers((previous) =>
       previous.map((player) => ({ ...player, betBusId: "" })),
     );
@@ -323,6 +347,32 @@ export default function Home() {
       return next;
     });
   }, [availableBuses, raceStarted]);
+
+  useEffect(() => {
+    if (!raceStarted || !betEndTime) {
+      return;
+    }
+
+    const updateRemaining = () => {
+      const remainingMilliseconds = betEndTime - Date.now();
+      if (remainingMilliseconds <= 0) {
+        setRaceStarted(false);
+        setBetEndTime(null);
+        setBetRemainingSeconds(0);
+        setBetFinished(true);
+        return;
+      }
+      const nextSeconds = Math.ceil(remainingMilliseconds / 1000);
+      setBetRemainingSeconds(nextSeconds);
+    };
+
+    updateRemaining();
+    const identifier = setInterval(updateRemaining, 1000);
+
+    return () => {
+      clearInterval(identifier);
+    };
+  }, [raceStarted, betEndTime]);
 
   useEffect(() => {
     if (!selectedOperator) {
@@ -396,7 +446,7 @@ export default function Home() {
     }))
     .sort((first, second) => second.distance - first.distance);
 
-  const leader = raceStarted ? rankedBuses[0]?.bus : undefined;
+  const leader = rankedBuses[0]?.bus;
 
   const positionByBusId: Record<string, number> = {};
   rankedBuses.forEach((entry, index) => {
@@ -526,39 +576,94 @@ export default function Home() {
                     ) : null}
                   </div>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900/80">
-                  <span>{raceStarted ? "Race running" : "Race not started"}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBusStats(() => {
-                        const next: Record<
-                          string,
-                          {
-                            distance: number;
-                            lastLatitude: number | null;
-                            lastLongitude: number | null;
-                          }
-                        > = {};
-                        availableBuses.forEach((bus) => {
-                          if (bus.latitude === null || bus.longitude === null) {
-                            return;
-                          }
-                          next[bus.id] = {
-                            distance: 0,
-                            lastLatitude: bus.latitude,
-                            lastLongitude: bus.longitude,
-                          };
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900/80">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>
+                      {raceStarted
+                        ? "Bet running"
+                        : betFinished
+                          ? "Bet finished"
+                          : "Bet not started"}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 text-[0.65rem]">
+                      <span className="tracking-[0.2em] text-amber-900/80">
+                        Bet length
+                      </span>
+                      <select
+                        value={betDurationMinutes}
+                        onChange={(event) =>
+                          setBetDurationMinutes(Number(event.target.value))
+                        }
+                        disabled={raceStarted}
+                        className="h-7 rounded border border-amber-900/40 bg-amber-50 px-2 text-[0.7rem] font-medium text-amber-950 shadow-inner outline-none disabled:opacity-40"
+                      >
+                        <option value={2}>2 min</option>
+                        <option value={5}>5 min</option>
+                        <option value={10}>10 min</option>
+                        <option value={30}>30 min</option>
+                      </select>
+                    </div>
+                    {betRemainingSeconds !== null ? (
+                      <span className="text-[0.65rem] font-semibold tracking-[0.2em] text-amber-900/80">
+                        {betRemainingSeconds <= 0
+                          ? "Bet finished"
+                          : `Time left: ${formatRemainingSeconds(betRemainingSeconds)}`}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBusStats(() => {
+                          const next: Record<
+                            string,
+                            {
+                              distance: number;
+                              lastLatitude: number | null;
+                              lastLongitude: number | null;
+                            }
+                          > = {};
+                          availableBuses.forEach((bus) => {
+                            if (bus.latitude === null || bus.longitude === null) {
+                              return;
+                            }
+                            next[bus.id] = {
+                              distance: 0,
+                              lastLatitude: bus.latitude,
+                              lastLongitude: bus.longitude,
+                            };
+                          });
+                          return next;
                         });
-                        return next;
-                      });
-                      setRaceStarted(true);
-                    }}
-                    disabled={raceStarted || buses.length === 0}
-                    className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 shadow-inner transition hover:bg-amber-200 disabled:opacity-40"
-                  >
-                    {raceStarted ? "Race running" : "Start race"}
-                  </button>
+                        const now = Date.now();
+                        const durationMilliseconds = betDurationMinutes * 60 * 1000;
+                        setBetEndTime(now + durationMilliseconds);
+                        setBetRemainingSeconds(
+                          Math.max(Math.floor(durationMilliseconds / 1000), 0),
+                        );
+                        setBetFinished(false);
+                        setRaceStarted(true);
+                      }}
+                      disabled={raceStarted || buses.length === 0}
+                      className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 shadow-inner transition hover:bg-amber-200 disabled:opacity-40"
+                    >
+                      {raceStarted ? "Bet running" : "Start bet"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRaceStarted(false);
+                        setBetEndTime(null);
+                        setBetRemainingSeconds(0);
+                        setBetFinished(true);
+                      }}
+                      disabled={!raceStarted}
+                      className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 shadow-inner transition hover:bg-amber-200 disabled:opacity-40"
+                    >
+                      Stop bet
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {players.map((player, index) => {
@@ -610,7 +715,7 @@ export default function Home() {
                           ))}
                         </select>
                         <div className="text-sm">
-                          {raceStarted ? (
+                          {raceStarted || betFinished ? (
                             bus ? (
                               position ? (
                                 <span>
@@ -627,7 +732,7 @@ export default function Home() {
                               <span>No bus selected</span>
                             )
                           ) : (
-                            <span>Race not started</span>
+                            <span>Bet not started</span>
                           )}
                         </div>
                         <button
