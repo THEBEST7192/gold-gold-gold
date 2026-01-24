@@ -196,6 +196,7 @@ export default function Home() {
     >
   >({});
   const [raceStarted, setRaceStarted] = useState(false);
+  const [busCount, setBusCount] = useState(6);
   const [betDurationMinutes, setBetDurationMinutes] = useState(5);
   const [betEndTime, setBetEndTime] = useState<number | null>(null);
   const [betRemainingSeconds, setBetRemainingSeconds] = useState<number | null>(
@@ -411,7 +412,7 @@ export default function Home() {
         if (!hasInitialSelectionRef.current) {
           if (incomingAvailable.length === 0) {
           } else {
-            const initial = pickRandom(incomingAvailable, 5);
+            const initial = pickRandom(incomingAvailable, busCount);
             hasInitialSelectionRef.current = true;
             setTrackedIds(initial.map((bus) => bus.id));
           }
@@ -436,6 +437,35 @@ export default function Home() {
       eventSource.close();
     };
   }, [selectedOperator]);
+
+  useEffect(() => {
+    if (!selectedOperator) {
+      return;
+    }
+    if (!hasInitialSelectionRef.current) {
+      return;
+    }
+    if (raceStarted) {
+      return;
+    }
+    if (availableBuses.length === 0) {
+      return;
+    }
+    const options = getUniqueBuses(availableBuses);
+    if (options.length === 0) {
+      return;
+    }
+    const count = Math.min(busCount, options.length);
+    if (count <= 0) {
+      return;
+    }
+    const nextBuses = pickRandom(options, count);
+    setTrackedIds(nextBuses.map((bus) => bus.id));
+    setBusStats({});
+    setPlayers((previous) =>
+      previous.map((player) => ({ ...player, betBusId: "" })),
+    );
+  }, [busCount]);
 
   const buses = availableBuses.filter((bus) => trackedIds.includes(bus.id));
 
@@ -464,57 +494,80 @@ export default function Home() {
             Pick Your Race Zone
           </h1>
           <p className="text-sm italic text-amber-900/80">
-            Choose a zone and we&apos;ll draw five random buses for today&apos;s race.
+            {`Choose a zone and we'll draw ${busCount} random bus${
+              busCount === 1 ? "" : "es"
+            } for today's race.`}
           </p>
         </div>
 
         <div className="space-y-3">
-          <label
-            htmlFor="operator"
-            className="block text-sm font-semibold uppercase tracking-[0.25em] text-amber-900"
-          >
-            Race zone
-          </label>
-          <div className="relative inline-block w-full max-w-md">
-            <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
-              <span className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">
-                Zone
-              </span>
-            </div>
-            <select
-              id="operator"
-              value={selectedOperator}
-              onMouseDown={() => setIsSelectOpen(true)}
-              onBlur={() => setIsSelectOpen(false)}
-              onChange={(event) => {
-                setSelectedOperator(event.target.value);
-                setIsSelectOpen(false);
-              }}
-              className="block h-12 w-full appearance-none rounded-md border border-amber-900/80 bg-amber-100/80 py-2 pl-20 pr-8 text-sm font-medium text-amber-950 shadow-inner outline-none transition duration-150 ease-out focus:border-amber-900 focus:ring-2 focus:ring-amber-700/40"
-            >
-              <option value="">Select a zone to start the race</option>
-              {operators.map((operator) => (
-                <option key={operator.code} value={operator.code}>
-                  {operator.label}
-                </option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
-              <span
-                className={`text-xs font-bold text-amber-900 transition-transform duration-150 ${
-                  isSelectOpen ? "rotate-180" : ""
-                }`}
+          <div className="flex flex-wrap items-end justify-center gap-3">
+            <div className="min-w-[16rem]">
+              <label
+                htmlFor="operator"
+                className="block text-sm font-semibold uppercase tracking-[0.25em] text-amber-900"
               >
-                ▼
-              </span>
+                Race zone
+              </label>
+              <div className="relative inline-block w-full">
+                <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-amber-700">
+                    Zone
+                  </span>
+                </div>
+                <select
+                  id="operator"
+                  value={selectedOperator}
+                  onMouseDown={() => setIsSelectOpen(true)}
+                  onBlur={() => setIsSelectOpen(false)}
+                  onChange={(event) => {
+                    setSelectedOperator(event.target.value);
+                    setIsSelectOpen(false);
+                  }}
+                  className="block h-12 w-full appearance-none rounded-md border border-amber-900/80 bg-amber-100/80 py-2 pl-20 pr-8 text-sm font-medium text-amber-950 shadow-inner outline-none transition duration-150 ease-out focus:border-amber-900 focus:ring-2 focus:ring-amber-700/40"
+                >
+                  <option value="">Select a zone to start the race</option>
+                  {operators.map((operator) => (
+                    <option key={operator.code} value={operator.code}>
+                      {operator.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center">
+                  <span
+                    className={`text-xs font-bold text-amber-900 transition-transform duration-150 ${
+                      isSelectOpen ? "rotate-180" : ""
+                    }`}
+                  >
+                    ▼
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="w-auto">
+              <label className="block text-sm font-semibold uppercase tracking-[0.25em] text-amber-900">
+                Buses in race
+              </label>
+              <select
+                value={busCount}
+                onChange={(event) => setBusCount(Number(event.target.value))}
+                disabled={raceStarted}
+                className="mt-1 h-12 min-w-[4.5rem] rounded-md border border-amber-900/80 bg-amber-100/80 px-3 text-sm font-medium text-amber-950 shadow-inner outline-none disabled:opacity-40"
+              >
+                {Array.from({ length: 12 }, (_unused, index) => (
+                  <option key={index + 1} value={index + 1}>
+                    {index + 1}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
 
         <p className="mt-6 text-xs uppercase tracking-[0.25em] text-amber-900/80">
           {selectedOperator
-            ? `Zone ${selectedOperator} is set – five random buses will enter the race.`
-            : "Select a zone to draw five random buses for today´s race"}
+            ? `Zone ${selectedOperator} is set – ${busCount} random bus${busCount === 1 ? "" : "es"} will enter the race.`
+            : `Select a zone to draw ${busCount} random bus${busCount === 1 ? "" : "es"} for today´s race`}
         </p>
 
         {selectedOperator ? (
@@ -529,7 +582,11 @@ export default function Home() {
                     if (options.length === 0) {
                       return;
                     }
-                    const nextBuses = pickRandom(options, 5);
+                    const count = Math.min(busCount, options.length);
+                    if (count <= 0) {
+                      return;
+                    }
+                    const nextBuses = pickRandom(options, count);
                     setTrackedIds(nextBuses.map((bus) => bus.id));
                     setBusStats({});
                     setPlayers((previous) =>
@@ -561,8 +618,8 @@ export default function Home() {
                       Players and bets
                     </p>
                     <p className="text-sm">
-                      Each player chooses one of the five buses. The leader is the one
-                      that has traveled the longest distance while you watch.
+                      Each player chooses one of the {busCount} buses. The leader is
+                      the one that has traveled the longest distance while you watch.
                     </p>
                   </div>
                   <div className="text-right text-sm">
