@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Busskappløp
 
-## Getting Started
+En Next.js + Leaflet‑app som strømmer sanntids bussposisjoner fra Entur og lar spillere tippe på hvilken buss som reiser lengst innen en valgt tidsperiode.
 
-First, run the development server:
+## Teknologistack
+- Next.js 16, React 19, TypeScript 5
+- Tailwind CSS v4 via PostCSS
+- Leaflet for kart
+- Biome for linting og formatering
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Forutsetninger
+- Node.js 18+ og npm 9+
+- Et klientnavn for Entur‑API (brukes som ET‑Client‑Name)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Kom i gang
+- Installer avhengigheter: `npm i`
+- Konfigurer miljø:
+  - Opprett en `.env.local` i prosjektroten med:
+    - `ENTUR_CLIENT_NAME=din-app`
+- Start utviklingsserver: `npm run dev`
+- Åpne nettsiden: http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## UI og brukeropplevelse
+- Velg en “Race zone” for området du vil følge
+- Sett antall busser som skal delta i kappløpet
+- Ensartet og polert UI med animerte piler i nedtrekksmenyer (SetupSelect)
+- Fokus på tydelig state‑håndtering og enkel komposisjon av komponenter
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Miljøvariabler
+- `ENTUR_CLIENT_NAME`: Kreves av Entur‑API og sendes som ET‑Client‑Name‑header. Uten denne vil API‑rutene returnere en feil.
 
-## Learn More
+## Tilgjengelige skripter
+- `npm run dev`: Starter utviklingsserver
+- `npm run build`: Bygger for produksjon
+- `npm run start`: Kjører bygget app
+- `npm run lint`: Lint med Biome
+- `npm run format`: Formaterer med Biome
 
-To learn more about Next.js, take a look at the following resources:
+## Hvordan det fungerer
+- Live datastrøm:
+  - SSE‑endepunktet `/api/entur` henter busser fra Entur med faste intervaller, beriker med nærliggende stopp, og strømmer oppdateringer til klienten.
+- Stoppdata:
+  - Lastes fra tekstfiler i `src/app/api/data/` (f.eks. `stops.txt`).
+- Bakgrunnsjobb (valgfritt):
+  - Inngest‑funksjonen lytter på hendelsen `app/entur.fetch` og henter busser via `getAvailableBuses`; den kjøres i `step.run` med innebygde retries og begrenset samtidighet (4).
+  - Brukes når du trenger periodiske eller hendelsesstyrte oppdateringer uten aktiv nettleser‑tilkobling (f.eks. planlagte jobber eller integrasjoner). Vanlig SSE‑strømming fungerer uten denne.
+- Brukergrensesnitt:
+  - Hovedside og løpslogikk: `src/app/page.tsx`
+  - Komponenter: `src/components/BusCard.tsx`, `src/components/BusMap.tsx`, `src/components/PlayerBets.tsx`, `src/components/RaceSetup.tsx`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Struktur
+- `src/app/page.tsx` - inngangspunkt
+- `src/components/RaceSetup.tsx` - oppsett av løp (nedtrekksmenyer)
+- `src/components/BusCard.tsx` - visning av bussdata
+- `src/components/BusMap.tsx` - kartlogikk
+- `src/components/PlayerBets.tsx` - spillerinnsatser
+- `src/lib/utils.ts` - hjelpefunksjoner
+- `src/app/types.ts` - TypeScript‑typer
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Styling
+- Tailwind CSS v4 via PostCSS
+- Globale stiler: `src/app/globals.css`
 
-## Deploy on Vercel
+## Utvikling
+- Lokal utvikling skjer med Next.js dev‑server (`npm run dev`) på Node 18+.
+- Biome brukes til linting/formattering, TypeScript 5 for typer, Tailwind CSS v4 via PostCSS for styling.
+- SSE-/API‑ruter kjører lokalt; `ENTUR_CLIENT_NAME` må settes i `.env.local` for å hente data fra Entur.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Hosting
+- Bygg med `npm run build` og start med `npm run start` på en Node 18+ runtime.
+- Passer for plattformer som Vercel eller egen Node‑server; sørg for at `ENTUR_CLIENT_NAME` er satt i miljøet.
+- Valgfri bakgrunnsjobb kan kjøres via Inngest‑integrasjonen for hendelsesstyrte oppdateringer uten en aktiv nettleser‑tilkobling.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Mål
+- Konsekvent og enkel brukeropplevelse
+- Gjenbrukbar og vedlikeholdbar komponentstruktur
+
+## Videre arbeid
+- Persistens med LocalStorage for å lagre valgt sone og antall busser, slik at brukeropplevelsen forblir konsistent ved sideoppdatering.
+- Videreutvikle poengtavlen til å bli mer visuelt spennende og unik, da den nåværende løsningen er for enkel og skiller seg ikke ut nok i grensesnittet.
+- Forbedre logikken ved gjenoppkobling etter rate-limiting (429) for å sikre at kartet og rute-linjen (trail) ikke forsvinner; i dag beholdes distanse reist, men de visuelle sporene på kartet nullstilles.
