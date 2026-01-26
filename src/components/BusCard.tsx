@@ -20,20 +20,20 @@ export default function BusCard({ bus, distance, players, raceStarted }: BusCard
         <h2 className="text-sm font-semibold text-amber-950">{bus.name}</h2>
       </div>
       <div className="mt-2 space-y-2 text-sm text-amber-900">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
+        <div className="grid grid-cols-2 items-start gap-2">
+          <div className="text-left">
             <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
               Current stop
             </span>
-            <span className="block text-sm font-medium text-amber-950">
+            <span className="mt-1 block break-words text-sm font-medium text-amber-950">
               {bus.currentStop}
             </span>
           </div>
-          <div className="ml-auto w-1/2 text-right">
+          <div className="text-right">
             <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
               Betters
             </span>
-            <span className="mt-1 block text-sm font-medium text-amber-950">
+            <span className="mt-1 block break-words text-sm font-medium text-amber-950">
               {betters.length > 0
                 ? betters.map((player) => player.name).join(", ")
                 : "None"}
