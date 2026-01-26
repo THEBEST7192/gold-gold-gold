@@ -34,6 +34,31 @@ export default function Home() {
     { id: "1", name: "Player 1", betBusId: "" },
     { id: "2", name: "Player 2", betBusId: "" },
   ]);
+  const mainRef = useRef<HTMLDivElement | null>(null);
+  const [embedWidth, setEmbedWidth] = useState(0);
+  const [embedVideoWidth, setEmbedVideoWidth] = useState(0);
+
+  // Compute dynamic width for side embeds to occupy leftover space
+  useEffect(() => {
+    const updateWidth = () => {
+      const mainEl = mainRef.current;
+      if (!mainEl) {
+        setEmbedWidth(0);
+        setEmbedVideoWidth(window.innerHeight * (16 / 9));
+        return;
+      }
+      const mainWidth = mainEl.offsetWidth;
+      const viewportWidth = window.innerWidth;
+      const leftover = Math.max((viewportWidth - mainWidth) / 2, 0);
+      setEmbedWidth(leftover);
+      setEmbedVideoWidth(window.innerHeight * (16 / 9));
+    };
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, []);
 
   const operators = [
     { code: "AKT", label: "AKT – Agder (AKT)" },
@@ -242,7 +267,53 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-amber-50 bg-[radial-gradient(circle_at_top,_#fef3c7,_#fbbf24_40%,_#78350f_120%)] font-serif">
-      <main className="w-full max-w-5xl rounded-2xl border-4 border-amber-900 bg-amber-50/90 px-8 py-8 text-center shadow-[0_24px_60px_rgba(0,0,0,0.4)]">
+      {/* Subway Surfers embeds shown during active bet on both sides */}
+      {raceStarted ? (
+        <>
+          <aside
+            className="fixed left-0 top-0 z-10 h-screen overflow-hidden pointer-events-none"
+            style={{ width: embedWidth }}
+          >
+            <iframe
+              title="Subway Surfers Left"
+              className="h-screen"
+              src="https://www.youtube.com/embed/eRXE8Aebp7s?autoplay=1&mute=1&loop=1&playlist=eRXE8Aebp7s"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              style={{
+                width: `${embedVideoWidth}px`,
+                position: "absolute",
+                left: "50%",
+                transform: "translateX(-50%)",
+                border: "none",
+              }}
+            />
+          </aside>
+          <aside
+            className="fixed right-0 top-0 z-10 h-screen overflow-hidden pointer-events-none"
+            style={{ width: embedWidth }}
+          >
+            <iframe
+              title="Subway Surfers Right"
+              className="h-screen"
+              src="https://www.youtube.com/embed/eRXE8Aebp7s?autoplay=1&mute=1&loop=1&playlist=eRXE8Aebp7s"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              style={{
+                width: `${embedVideoWidth}px`,
+                position: "absolute",
+                left: "50%",
+                transform: "translateX(-50%)",
+                border: "none",
+              }}
+            />
+          </aside>
+        </>
+      ) : null}
+      <main
+        ref={mainRef}
+        className="w-full max-w-5xl rounded-2xl border-4 border-amber-900 bg-amber-50/90 px-8 py-8 text-center shadow-[0_24px_60px_rgba(0,0,0,0.4)]"
+      >
         <RaceSetup
           selectedOperator={selectedOperator}
           setSelectedOperator={setSelectedOperator}
