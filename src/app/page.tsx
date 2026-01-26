@@ -37,6 +37,8 @@ export default function Home() {
   const mainRef = useRef<HTMLDivElement | null>(null);
   const [embedWidth, setEmbedWidth] = useState(0);
   const [embedVideoWidth, setEmbedVideoWidth] = useState(0);
+  const [leftStart, setLeftStart] = useState(0);
+  const [rightStart, setRightStart] = useState(0);
 
   // Compute dynamic width for side embeds to occupy leftover space
   useEffect(() => {
@@ -59,6 +61,17 @@ export default function Home() {
       window.removeEventListener("resize", updateWidth);
     };
   }, []);
+
+  useEffect(() => {
+    if (raceStarted) {
+      const videoSeconds = 10 * 60 * 60;
+      setLeftStart(Math.floor(Math.random() * videoSeconds));
+      setRightStart(Math.floor(Math.random() * videoSeconds));
+    } else {
+      setLeftStart(0);
+      setRightStart(0);
+    }
+  }, [raceStarted]);
 
   const operators = [
     { code: "AKT", label: "AKT – Agder (AKT)" },
@@ -277,7 +290,7 @@ export default function Home() {
             <iframe
               title="Subway Surfers Left"
               className="h-screen"
-              src="https://www.youtube.com/embed/eRXE8Aebp7s?autoplay=1&mute=1&loop=1&playlist=eRXE8Aebp7s"
+              src={`https://www.youtube.com/embed/eRXE8Aebp7s?autoplay=1&mute=1&loop=1&playlist=eRXE8Aebp7s&start=${leftStart}`}
               allow="autoplay; encrypted-media"
               allowFullScreen
               style={{
@@ -296,7 +309,7 @@ export default function Home() {
             <iframe
               title="Subway Surfers Right"
               className="h-screen"
-              src="https://www.youtube.com/embed/eRXE8Aebp7s?autoplay=1&mute=1&loop=1&playlist=eRXE8Aebp7s"
+              src={`https://www.youtube.com/embed/eRXE8Aebp7s?autoplay=1&mute=1&loop=1&playlist=eRXE8Aebp7s&start=${rightStart}`}
               allow="autoplay; encrypted-media"
               allowFullScreen
               style={{
