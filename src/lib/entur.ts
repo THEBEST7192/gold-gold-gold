@@ -167,28 +167,76 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
         location?.Longitude ?? location?.longitude,
       );
 
-      const name =
-        normalizeText(journey.LineName) ||
-        normalizeText(journey.PublishedLineName) ||
-        normalizeText(journey.LineRef) ||
-        normalizeText(journey.VehicleRef) ||
-        "Unknown line";
+      const sanitizeLabel = (text: string) => {
+        const trimmed = text.trim();
+        if (!trimmed) return "";
+        // If its just a long numeric ID, its not a line name
+        if (/^\d{7,}$/.test(trimmed)) return "";
+        let result = trimmed.replace(/^NSR:(StopPoint|Quay|Trip|Line):/i, "");
+        result = result.replace(/^[A-Z]{3}:(Line:)?/i, "");
+        result = result.replace(/^\d+_+/, "");
+        result = result.replace(/\s+/g, " ").trim();
+        return result;
+      };
+
+      const getLineName = () => {
+        const published = sanitizeLabel(normalizeText(journey.PublishedLineName));
+        if (published) return published;
+
+        const lineName = sanitizeLabel(normalizeText(journey.LineName));
+        if (lineName) return lineName;
+
+        const publicCode = sanitizeLabel(
+          normalizeText((journey as Record<string, unknown>).PublicCode),
+        );
+        if (publicCode) return publicCode;
+
+        const lineRef = sanitizeLabel(normalizeText(journey.LineRef));
+        if (lineRef) return lineRef;
+
+        const journeyRef = normalizeText(
+          (journey as Record<string, unknown>).DatedVehicleJourneyRef ||
+            (
+              journey as {
+                FramedVehicleJourneyRef?: { DatedVehicleJourneyRef?: unknown };
+              }
+            ).FramedVehicleJourneyRef?.DatedVehicleJourneyRef,
+        );
+
+        if (journeyRef) {
+          const parts = journeyRef.split(":");
+          const lastPart = parts[parts.length - 1];
+          if (lastPart) {
+            const subParts = lastPart.split("_");
+            for (const part of subParts) {
+              const clean = sanitizeLabel(part);
+              if (clean && !/^\d{5,}$/.test(clean)) return clean;
+            }
+          }
+        }
+
+        return "Unknown line";
+      };
+
+      const name = getLineName();
 
       const rawDestinationRef = journey.DestinationRef;
       const destinationStopId = normalizeText(rawDestinationRef);
 
-      const destination =
+      const destinationRaw =
         normalizeText(journey.DestinationName) ||
         normalizeText(rawDestinationRef) ||
         "Unknown destination";
+      const destination = sanitizeLabel(destinationRaw);
 
       const monitoredCall = journey.MonitoredCall as
         | Record<string, unknown>
         | undefined;
-      const currentStop =
+      const currentStopRaw =
         normalizeText(monitoredCall?.StopPointName) ||
         normalizeText(monitoredCall?.StopPointRef) ||
         "Unknown stop";
+      const currentStop = sanitizeLabel(currentStopRaw);
 
       const lineRef = normalizeText((journey as Record<string, unknown>).LineRef);
       const originRef =
@@ -362,7 +410,21 @@ export const getAvailableBuses = async (operator: string, clientName: string) =>
         }
 
         if (!destinationStop && nearbyStops.length > 0) {
-          destinationStop = nearbyStops[0];
+          let nearest: StopInfo | null = null;
+          let best = Number.POSITIVE_INFINITY;
+          for (const stop of nearbyStops) {
+            const d = distanceInMetersInternal(
+              bus.latitude as number,
+              bus.longitude as number,
+              stop.latitude,
+              stop.longitude,
+            );
+            if (d < best) {
+              best = d;
+              nearest = stop;
+            }
+          }
+          destinationStop = nearest ?? nearbyStops[0];
         }
 
         if (destinationStop) {
@@ -371,6 +433,33 @@ export const getAvailableBuses = async (operator: string, clientName: string) =>
             if (stop.id === destinationStop.id) {
               nearbyStops[index] = { ...stop, isDestination: true };
             }
+          }
+          if (destinationStop.name && destinationStop.name !== bus.destination) {
+            bus = { ...bus, destination: destinationStop.name };
+          }
+        }
+        const isRefLike = (text: string) =>
+          /^NSR:/i.test(text) ||
+          /^[A-Z]{3}:/i.test(text) ||
+          /^\d+$/.test(text) ||
+          text.toLowerCase() === "unknown stop";
+        if (isRefLike(bus.currentStop) && nearbyStops.length > 0) {
+          let nearest: StopInfo | null = null;
+          let best = Number.POSITIVE_INFINITY;
+          for (const stop of nearbyStops) {
+            const d = distanceInMetersInternal(
+              bus.latitude as number,
+              bus.longitude as number,
+              stop.latitude,
+              stop.longitude,
+            );
+            if (d < best) {
+              best = d;
+              nearest = stop;
+            }
+          }
+          if (nearest?.name) {
+            bus = { ...bus, currentStop: nearest.name };
           }
         }
         return { ...bus, nearbyStops };
