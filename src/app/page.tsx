@@ -40,6 +40,7 @@ export default function Home() {
   const [leftStart, setLeftStart] = useState(0);
   const [rightStart, setRightStart] = useState(0);
   const [hasData, setHasData] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // Compute dynamic width for side embeds to occupy leftover space
   useEffect(() => {
@@ -191,7 +192,6 @@ export default function Home() {
       setLastUpdated("");
       return;
     }
-    let identifier: ReturnType<typeof setInterval> | null = null;
     let isCancelled = false;
     const fetchOnce = async () => {
       try {
@@ -215,8 +215,17 @@ export default function Home() {
         }
         const incomingAvailable = getUniqueBuses(payload.availableBuses ?? []);
         if (incomingAvailable.length > 0) {
+          const prevById = new Map(availableBuses.map((b) => [b.id, b]));
+          const merged = [...incomingAvailable];
+          trackedIds.forEach((id) => {
+            if (!merged.some((b) => b.id === id)) {
+              const prev = prevById.get(id);
+              if (prev) merged.push(prev);
+            }
+          });
+          const next = getUniqueBuses(merged);
           setHasData(true);
-          setAvailableBuses(incomingAvailable);
+          setAvailableBuses(next);
         }
         if (!hasInitialSelectionRef.current) {
           if (incomingAvailable.length > 0) {
@@ -239,29 +248,12 @@ export default function Home() {
         }
       }
     };
-    const startPolling = () => {
-      if (identifier) {
-        clearInterval(identifier);
-        identifier = null;
-      }
-      setIsLoading(!hasData);
-      fetchOnce();
-      const intervalMs = document.hidden ? 0 : 20000;
-      if (intervalMs > 0) {
-        identifier = setInterval(fetchOnce, intervalMs);
-      }
-    };
-    startPolling();
-    const onVisibility = () => {
-      startPolling();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
+    setIsLoading(!hasData);
+    fetchOnce();
     return () => {
       isCancelled = true;
-      if (identifier) clearInterval(identifier);
-      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [selectedOperator]);
+  }, [selectedOperator, refreshTick]);
 
   useEffect(() => {
     if (!selectedOperator || !hasInitialSelectionRef.current || raceStarted || availableBuses.length === 0) {
@@ -387,6 +379,15 @@ export default function Home() {
                   disabled={availableBuses.length === 0}
                 >
                   Shuffle buses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRefreshTick((value) => value + 1);
+                  }}
+                  className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 transition hover:bg-amber-200"
+                >
+                  Refresh
                 </button>
                 <span>
                   {lastUpdated
