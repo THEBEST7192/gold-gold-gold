@@ -18,6 +18,7 @@ export default function BusMap({ latitude, longitude, stops, trackEnabled }: Bus
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const stopsLayerRef = useRef<L.LayerGroup | null>(null);
   const trailRef = useRef<L.Polyline | null>(null);
+  const stopsIndexRef = useRef<Map<string, L.Layer>>(new Map());
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -108,14 +109,7 @@ export default function BusMap({ latitude, longitude, stops, trackEnabled }: Bus
   }, [trackEnabled]);
 
   useEffect(() => {
-    if (!mapRef.current || !stopsLayerRef.current) {
-      return;
-    }
-    stopsLayerRef.current.clearLayers();
-    if (!stops || stops.length === 0) {
-      return;
-    }
-    if (!leafletRef.current) {
+    if (!mapRef.current || !stopsLayerRef.current || !leafletRef.current) {
       return;
     }
     const leaflet = leafletRef.current;
@@ -125,27 +119,66 @@ export default function BusMap({ latitude, longitude, stops, trackEnabled }: Bus
       iconSize: [16, 16],
       iconAnchor: [8, 16],
     });
-    stops.forEach((stop) => {
+    const index = stopsIndexRef.current;
+    const nextIds = new Set<string>((stops ?? []).map((s) => s.id));
+    // Remove markers that are no longer present
+    index.forEach((layer, id) => {
+      if (!nextIds.has(id)) {
+        (stopsLayerRef.current as L.LayerGroup).removeLayer(layer);
+        index.delete(id);
+      }
+    });
+    // Add or update markers for current stops
+    (stops ?? []).forEach((stop) => {
       const stopLatitude = stop.latitude;
       const stopLongitude = stop.longitude;
       if (!Number.isFinite(stopLatitude) || !Number.isFinite(stopLongitude)) {
         return;
       }
-      if (stop.isDestination) {
-        leaflet
-          .marker([stopLatitude, stopLongitude], {
-            icon: destinationIcon,
-          })
-          .addTo(stopsLayerRef.current as L.LayerGroup);
+      const existing = index.get(stop.id);
+      const isDestination = !!stop.isDestination;
+      if (!existing) {
+        const layer = isDestination
+          ? leaflet
+              .marker([stopLatitude, stopLongitude], {
+                icon: destinationIcon,
+              })
+              .addTo(stopsLayerRef.current as L.LayerGroup)
+          : leaflet
+              .circleMarker([stopLatitude, stopLongitude], {
+                color: "#1e3a8a",
+                fillColor: "#93c5fd",
+                fillOpacity: 0.9,
+                radius: 3,
+              })
+              .addTo(stopsLayerRef.current as L.LayerGroup);
+        index.set(stop.id, layer);
       } else {
-        leaflet
-          .circleMarker([stopLatitude, stopLongitude], {
-            color: "#1e3a8a",
-            fillColor: "#93c5fd",
-            fillOpacity: 0.9,
-            radius: 3,
-          })
-          .addTo(stopsLayerRef.current as L.LayerGroup);
+        // Update position; if destination flag toggled, replace layer
+        const isMarker = "setLatLng" in (existing as any) && "getLatLng" in (existing as any);
+        if (isMarker) {
+          (existing as any).setLatLng([stopLatitude, stopLongitude]);
+          const hadIcon = typeof (existing as any).options?.icon !== "undefined";
+          if (hadIcon !== isDestination) {
+            (stopsLayerRef.current as L.LayerGroup).removeLayer(existing);
+            index.delete(stop.id);
+            const layer = isDestination
+              ? leaflet
+                  .marker([stopLatitude, stopLongitude], {
+                    icon: destinationIcon,
+                  })
+                  .addTo(stopsLayerRef.current as L.LayerGroup)
+              : leaflet
+                  .circleMarker([stopLatitude, stopLongitude], {
+                    color: "#1e3a8a",
+                    fillColor: "#93c5fd",
+                    fillOpacity: 0.9,
+                    radius: 3,
+                  })
+                  .addTo(stopsLayerRef.current as L.LayerGroup);
+            index.set(stop.id, layer);
+          }
+        }
       }
     });
     if (markerRef.current) {

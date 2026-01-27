@@ -1,44 +1,23 @@
-import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import type { BusInfo, StopInfo } from "@/app/types";
 
 const ENTUR_VM_ENDPOINT = "https://api.entur.io/realtime/v1/rest/vm";
-const ENTUR_REFRESH_MS = 20000;
+const ENTUR_REFRESH_MS = 30000;
 const ENTUR_RATE_LIMIT_WINDOW_MS = 60000;
 const ENTUR_RATE_LIMIT_MAX = 4;
 const NEARBY_STOP_RADIUS_METERS = 1000;
 
-export type StopInfo = {
-  id: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  isDestination?: boolean;
-};
-
-export type BusInfo = {
-  id: string;
-  name: string;
-  currentStop: string;
-  destination: string;
-  destinationStopId: string | undefined;
-  latitude: number | null;
-  longitude: number | null;
-  nearbyStops?: StopInfo[];
-};
-
-type CacheEntry = {
-  data: BusInfo[];
-  fetchedAt: number;
-  inFlight: Promise<BusInfo[]> | null;
-};
-
-const operatorCache = new Map<string, CacheEntry>();
+const operatorCache = new Map<
+  string,
+  { data: BusInfo[]; fetchedAt: number; inFlight: Promise<BusInfo[]> | null }
+>();
 const globalFetchTimestamps: number[] = [];
-
 let stopsCache: StopInfo[] | null = null;
-let activeStreams = 0;
-
+let stopsGrid:
+  | Map<string, StopInfo[]>
+  | null = null;
+const TILE_SIZE_DEG = 0.02;
 const requestorIdByOperator = new Map<string, string>();
 
 const createRequestorId = (operator: string) =>
@@ -48,7 +27,7 @@ const createRequestorId = (operator: string) =>
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
 
-const distanceInMeters = (
+const distanceInMetersInternal = (
   lat1: number,
   lon1: number,
   lat2: number,
@@ -101,6 +80,17 @@ const loadStops = async (): Promise<StopInfo[]> => {
     stops.push({ id, name, latitude, longitude });
   }
   stopsCache = stops;
+  // Build a simple grid index to reduce per-request CPU
+  const grid = new Map<string, StopInfo[]>();
+  const keyFor = (lat: number, lon: number) =>
+    `${Math.floor(lat / TILE_SIZE_DEG)}:${Math.floor(lon / TILE_SIZE_DEG)}`;
+  for (const stop of stops) {
+    const key = keyFor(stop.latitude, stop.longitude);
+    const bucket = grid.get(key) ?? [];
+    bucket.push(stop);
+    grid.set(key, bucket);
+  }
+  stopsGrid = grid;
   return stops;
 };
 
@@ -137,7 +127,6 @@ const normalizeArray = <T,>(value: T | T[] | undefined | null): T[] => {
   return Array.isArray(value) ? value : [value];
 };
 
-
 const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
   const siri = payload as {
     Siri?: { ServiceDelivery?: { VehicleMonitoringDelivery?: unknown } };
@@ -150,9 +139,7 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
     siri.VehicleMonitoringDelivery;
 
   const activities = normalizeArray(deliveries).flatMap((delivery) =>
-    normalizeArray(
-      (delivery as { VehicleActivity?: unknown }).VehicleActivity,
-    ),
+    normalizeArray((delivery as { VehicleActivity?: unknown }).VehicleActivity),
   );
 
   const buses = activities
@@ -253,15 +240,12 @@ const fetchFromEntur = async (operator: string, clientName: string) => {
   return extractBuses(payload);
 };
 
-export const getAvailableBuses = async (
-  operator: string,
-  clientName: string,
-) => {
+export const getAvailableBuses = async (operator: string, clientName: string) => {
   const now = Date.now();
   const entry = operatorCache.get(operator) ?? {
     data: [],
     fetchedAt: 0,
-    inFlight: null,
+    inFlight: null as Promise<BusInfo[]> | null,
   };
 
   if (entry.inFlight) {
@@ -293,12 +277,33 @@ export const getAvailableBuses = async (
   const inFlight = fetchFromEntur(operator, clientName)
     .then(async (data) => {
       const stops = await loadStops();
+      const keyFor = (lat: number, lon: number) =>
+        `${Math.floor(lat / TILE_SIZE_DEG)}:${Math.floor(lon / TILE_SIZE_DEG)}`;
+      const candidatesFor = (lat: number, lon: number): StopInfo[] => {
+        if (!stopsGrid) {
+          return stops;
+        }
+        const baseLatIndex = Math.floor(lat / TILE_SIZE_DEG);
+        const baseLonIndex = Math.floor(lon / TILE_SIZE_DEG);
+        const list: StopInfo[] = [];
+        for (let di = -1; di <= 1; di += 1) {
+          for (let dj = -1; dj <= 1; dj += 1) {
+            const key = `${baseLatIndex + di}:${baseLonIndex + dj}`;
+            const bucket = stopsGrid.get(key);
+            if (bucket && bucket.length > 0) {
+              list.push(...bucket);
+            }
+          }
+        }
+        return list.length > 0 ? list : stops;
+      };
       const enriched = data.map((bus) => {
         if (bus.latitude === null || bus.longitude === null) {
           return { ...bus, nearbyStops: [] };
         }
-        const nearbyStopsBase = stops.filter((stop) => {
-          const distance = distanceInMeters(
+        const candidates = candidatesFor(bus.latitude as number, bus.longitude as number);
+        const nearbyStopsBase = candidates.filter((stop) => {
+          const distance = distanceInMetersInternal(
             bus.latitude as number,
             bus.longitude as number,
             stop.latitude,
@@ -312,15 +317,10 @@ export const getAvailableBuses = async (
 
         if (bus.destinationStopId) {
           destinationStop =
-            nearbyStops.find(
-              (stop) => stop.id === bus.destinationStopId,
-            ) ??
+            nearbyStops.find((stop) => stop.id === bus.destinationStopId) ??
             stops.find((stop) => stop.id === bus.destinationStopId) ??
             null;
-          if (
-            destinationStop &&
-            !nearbyStops.some((stop) => stop.id === destinationStop!.id)
-          ) {
+          if (destinationStop && !nearbyStops.some((stop) => stop.id === destinationStop!.id)) {
             nearbyStops.push(destinationStop);
           }
         }
@@ -329,17 +329,10 @@ export const getAvailableBuses = async (
           const destinationName = bus.destination.toLowerCase();
           if (destinationName && destinationName !== "unknown destination") {
             destinationStop =
-              nearbyStops.find(
-                (stop) => stop.name.toLowerCase() === destinationName,
-              ) ??
-              stops.find(
-                (stop) => stop.name.toLowerCase() === destinationName,
-              ) ??
+              nearbyStops.find((stop) => stop.name.toLowerCase() === destinationName) ??
+              stops.find((stop) => stop.name.toLowerCase() === destinationName) ??
               null;
-            if (
-              destinationStop &&
-              !nearbyStops.some((stop) => stop.id === destinationStop!.id)
-            ) {
+            if (destinationStop && !nearbyStops.some((stop) => stop.id === destinationStop!.id)) {
               nearbyStops.push(destinationStop);
             }
           }
@@ -375,91 +368,3 @@ export const getAvailableBuses = async (
   return inFlight;
 };
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const operator = searchParams.get("operator");
-
-  if (!operator) {
-    return NextResponse.json(
-      { error: "Operator is required." },
-      { status: 400 },
-    );
-  }
-
-  const clientName = process.env.ENTUR_CLIENT_NAME;
-  if (!clientName) {
-    return NextResponse.json(
-      { error: "ENTUR_CLIENT_NAME is not configured." },
-      { status: 500 },
-    );
-  }
-
-  if (activeStreams >= 4) {
-    return NextResponse.json(
-      { error: "Too many active streams. Please try again later." },
-      { status: 429 },
-    );
-  }
-
-  const encoder = new TextEncoder();
-  let intervalId: ReturnType<typeof setInterval> | null = null;
-
-  activeStreams += 1;
-
-  const stream = new ReadableStream({
-    start(controller) {
-      const send = (payload: unknown) => {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-        );
-      };
-
-      const fetchAndSend = async () => {
-        if (request.signal.aborted) {
-          return;
-        }
-        try {
-          const availableBuses = await getAvailableBuses(operator, clientName);
-          send({
-            operator,
-            availableBuses,
-            updatedAt: new Date().toISOString(),
-          });
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Request failed.";
-          send({ error: message });
-        }
-      };
-
-      fetchAndSend();
-      intervalId = setInterval(fetchAndSend, ENTUR_REFRESH_MS);
-
-      request.signal.addEventListener("abort", () => {
-        if (intervalId) {
-          clearInterval(intervalId);
-        }
-        if (activeStreams > 0) {
-          activeStreams -= 1;
-        }
-        controller.close();
-      });
-    },
-    cancel() {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      if (activeStreams > 0) {
-        activeStreams -= 1;
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
-}

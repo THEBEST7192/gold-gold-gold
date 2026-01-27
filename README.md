@@ -37,13 +37,12 @@ En Next.js + Leaflet‑app som strømmer sanntids bussposisjoner fra Entur og la
 - `npm run format`: Formaterer med Biome
 
 ## Hvordan det fungerer
-- Live datastrøm:
-  - SSE‑endepunktet `/api/entur` henter busser fra Entur med faste intervaller, beriker med nærliggende stopp, og strømmer oppdateringer til klienten.
+- Klientoppdatering:
+  - Klienten poller data fra `/api/buses` i korte HTTP‑kall for å unngå langvarige tilkoblinger som kan time ut i hostingmiljøer.
+- Synkron henting per forespørsel:
+  - API‑ruten `/api/buses` utfører ett kall mot Entur via `getAvailableBuses` for hver forespørsel og svarer umiddelbart med resultatet. Ingen langvarig bakgrunnsprosess startes som del av disse kallene.
 - Stoppdata:
   - Lastes fra tekstfiler i `src/app/api/data/` (f.eks. `stops.txt`).
-- Bakgrunnsjobb (valgfritt):
-  - Inngest‑funksjonen lytter på hendelsen `app/entur.fetch` og henter busser via `getAvailableBuses`; den kjøres i `step.run` med innebygde retries og begrenset samtidighet (4).
-  - Brukes når du trenger periodiske eller hendelsesstyrte oppdateringer uten aktiv nettleser‑tilkobling (f.eks. planlagte jobber eller integrasjoner). Vanlig SSE‑strømming fungerer uten denne.
 - Brukergrensesnitt:
   - Hovedside og løpslogikk: `src/app/page.tsx`
   - Komponenter: `src/components/BusCard.tsx`, `src/components/BusMap.tsx`, `src/components/PlayerBets.tsx`, `src/components/RaceSetup.tsx`
@@ -64,18 +63,19 @@ En Next.js + Leaflet‑app som strømmer sanntids bussposisjoner fra Entur og la
 ## Utvikling
 - Lokal utvikling skjer med Next.js dev‑server (`npm run dev`) på Node 18+.
 - Biome brukes til linting/formattering, TypeScript 5 for typer, Tailwind CSS v4 via PostCSS for styling.
-- SSE-/API‑ruter kjører lokalt; `ENTUR_CLIENT_NAME` må settes i `.env.local` for å hente data fra Entur.
+- API‑ruter kjører lokalt; `ENTUR_CLIENT_NAME` må settes i `.env.local` for å hente data fra Entur.
+ - Bettingdata:
+   - All logikk for spillere, innsats og løp kjøres i nettleseren. Ingen bettingdata sendes til server.
 
 ## Hosting
 - Bygg med `npm run build` og start med `npm run start` på en Node 18+ runtime.
 - Passer for plattformer som Vercel eller egen Node‑server; sørg for at `ENTUR_CLIENT_NAME` er satt i miljøet.
-- Valgfri bakgrunnsjobb kan kjøres via Inngest‑integrasjonen for hendelsesstyrte oppdateringer uten en aktiv nettleser‑tilkobling.
 
 ## Mål
 - Konsekvent og enkel brukeropplevelse
 - Gjenbrukbar og vedlikeholdbar komponentstruktur
 
 ## Videre arbeid
-- Persistens med LocalStorage for å lagre valgt sone og antall busser, slik at brukeropplevelsen forblir konsistent ved sideoppdatering.
+- Forbedre bevaring av valg under sidenavigering uten vedvarende lagring.
 - Videreutvikle poengtavlen til å bli mer visuelt spennende og unik, da den nåværende løsningen er for enkel og skiller seg ikke ut nok i grensesnittet.
 - Forbedre logikken ved gjenoppkobling etter rate-limiting (429) for å sikre at kartet og rute-linjen (trail) ikke forsvinner; i dag beholdes distanse reist, men de visuelle sporene på kartet nullstilles.

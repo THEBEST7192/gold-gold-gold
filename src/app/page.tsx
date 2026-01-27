@@ -39,6 +39,7 @@ export default function Home() {
   const [embedVideoWidth, setEmbedVideoWidth] = useState(0);
   const [leftStart, setLeftStart] = useState(0);
   const [rightStart, setRightStart] = useState(0);
+  const [hasData, setHasData] = useState(false);
 
   // Compute dynamic width for side embeds to occupy leftover space
   useEffect(() => {
@@ -61,6 +62,8 @@ export default function Home() {
       window.removeEventListener("resize", updateWidth);
     };
   }, []);
+
+
 
   useEffect(() => {
     if (raceStarted) {
@@ -106,6 +109,7 @@ export default function Home() {
     setBetEndTime(null);
     setBetRemainingSeconds(null);
     setBetFinished(false);
+    setHasData(false);
     setPlayers((previous) =>
       previous.map((player) => ({ ...player, betBusId: "" })),
     );
@@ -187,35 +191,35 @@ export default function Home() {
       setLastUpdated("");
       return;
     }
-
-    setIsLoading(true);
-    setErrorMessage("");
-    setLastUpdated("");
-
-    const eventSource = new EventSource(
-      `/api/entur?operator=${selectedOperator}`,
-    );
-
-    eventSource.onmessage = (event) => {
+    let identifier: ReturnType<typeof setInterval> | null = null;
+    let isCancelled = false;
+    const fetchOnce = async () => {
       try {
-        const payload = JSON.parse(event.data) as {
+        const response = await fetch(`/api/buses?operator=${selectedOperator}`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as {
           availableBuses?: BusInfo[];
           updatedAt?: string;
           error?: string;
+          refreshing?: boolean;
+          source?: string;
         };
-        if (payload.error) {
-          setErrorMessage(payload.error);
-          setAvailableBuses([]);
-          setTrackedIds([]);
-          setIsLoading(false);
+        if (isCancelled) return;
+        if (!response.ok || payload.error) {
+          setErrorMessage(payload.error ?? `Status ${response.status}`);
+          if (!hasData) {
+            setIsLoading(false);
+          }
           return;
         }
         const incomingAvailable = getUniqueBuses(payload.availableBuses ?? []);
-        setAvailableBuses(incomingAvailable);
-
+        if (incomingAvailable.length > 0) {
+          setHasData(true);
+          setAvailableBuses(incomingAvailable);
+        }
         if (!hasInitialSelectionRef.current) {
-          if (incomingAvailable.length === 0) {
-          } else {
+          if (incomingAvailable.length > 0) {
             const initial = pickRandom(incomingAvailable, busCount);
             hasInitialSelectionRef.current = true;
             setTrackedIds(initial.map((bus) => bus.id));
@@ -223,22 +227,39 @@ export default function Home() {
         }
         setLastUpdated(payload.updatedAt ?? "");
         setErrorMessage("");
-        setIsLoading(false);
+        if (hasData || incomingAvailable.length > 0) {
+          setIsLoading(false);
+        }
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to parse stream.";
+        if (isCancelled) return;
+        const message = error instanceof Error ? error.message : "Request failed.";
         setErrorMessage(message);
-        setIsLoading(false);
+        if (!hasData) {
+          setIsLoading(false);
+        }
       }
     };
-
-    eventSource.onerror = () => {
-      setErrorMessage("Stream disconnected.");
-      setIsLoading(false);
+    const startPolling = () => {
+      if (identifier) {
+        clearInterval(identifier);
+        identifier = null;
+      }
+      setIsLoading(!hasData);
+      fetchOnce();
+      const intervalMs = document.hidden ? 0 : 20000;
+      if (intervalMs > 0) {
+        identifier = setInterval(fetchOnce, intervalMs);
+      }
     };
-
+    startPolling();
+    const onVisibility = () => {
+      startPolling();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      eventSource.close();
+      isCancelled = true;
+      if (identifier) clearInterval(identifier);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [selectedOperator]);
 
@@ -520,9 +541,9 @@ export default function Home() {
               </div>
             ) : null}
 
-            {isLoading ? (
+            {!hasData && isLoading ? (
               <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-sm text-amber-900">
-                Fetching the starting grid...
+                {"Fetching the starting grid..."}
               </div>
             ) : errorMessage ? (
               <div className="rounded-xl border border-amber-900/30 bg-amber-100/70 px-3 py-4 text-sm text-amber-900">

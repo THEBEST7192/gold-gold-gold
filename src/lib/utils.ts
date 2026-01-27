@@ -1,6 +1,3 @@
-export const formatCoordinate = (value: number | null) =>
-  value === null ? "—" : value.toFixed(5);
-
 export const formatDistance = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) {
     return "0 m";
