@@ -40,12 +40,12 @@ export default function BusCard({ bus, distance, players, raceStarted }: BusCard
             </span>
           </div>
         </div>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
+        <div className="grid grid-cols-2 items-start gap-2">
+          <div className="text-left">
             <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
               Destination
             </span>
-            <span className="block text-sm font-medium text-amber-950">
+            <span className="mt-1 block break-words text-sm font-medium text-amber-950">
               {bus.destination}
             </span>
           </div>
@@ -53,7 +53,7 @@ export default function BusCard({ bus, distance, players, raceStarted }: BusCard
             <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
               Distance
             </span>
-            <span className="block text-sm font-medium text-amber-950">
+            <span className="mt-1 block break-words text-sm font-medium text-amber-950">
               {formatDistance(distance)}
             </span>
           </div>
