@@ -190,10 +190,33 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
         normalizeText(monitoredCall?.StopPointRef) ||
         "Unknown stop";
 
+      const lineRef = normalizeText((journey as Record<string, unknown>).LineRef);
+      const originRef =
+        normalizeText((journey as Record<string, unknown>).OriginRef) ||
+        normalizeText((journey as Record<string, unknown>).OriginName);
+      const directionRef = normalizeText(
+        (journey as Record<string, unknown>).DirectionRef,
+      );
+      const datedVehicleJourneyRef = normalizeText(
+        (journey as Record<string, unknown>).DatedVehicleJourneyRef,
+      );
+      const framedVehicleJourneyRef = normalizeText(
+        (journey as { FramedVehicleJourneyRef?: { DatedVehicleJourneyRef?: unknown } })
+          ?.FramedVehicleJourneyRef?.DatedVehicleJourneyRef,
+      );
+
+      const stableComposite =
+        [lineRef, originRef, destinationStopId || destination, directionRef]
+          .filter(Boolean)
+          .join("|");
+
       const id =
         normalizeText(journey.VehicleRef) ||
+        datedVehicleJourneyRef ||
+        framedVehicleJourneyRef ||
+        stableComposite ||
         normalizeText((activity as { ItemIdentifier?: unknown }).ItemIdentifier) ||
-        `${name}-${index}`;
+        name;
 
       const bus: BusInfo = {
         id,
