@@ -190,6 +190,8 @@ export default function Home() {
       return;
     }
     let isCancelled = false;
+    let identifier: NodeJS.Timeout | null = null;
+
     const fetchOnce = async () => {
       try {
         const response = await fetch(`/api/buses?operator=${selectedOperator}`, {
@@ -245,10 +247,32 @@ export default function Home() {
         }
       }
     };
-    setIsLoading(!hasData);
-    fetchOnce();
+
+    const startPolling = () => {
+      if (identifier) {
+        clearInterval(identifier);
+        identifier = null;
+      }
+      setIsLoading(!hasData);
+      fetchOnce();
+      const intervalMs = document.hidden ? 0 : 20000;
+      if (intervalMs > 0) {
+        identifier = setInterval(fetchOnce, intervalMs);
+      }
+    };
+
+    startPolling();
+
+    const onVisibility = () => {
+      startPolling();
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       isCancelled = true;
+      if (identifier) clearInterval(identifier);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [selectedOperator, refreshTick]);
 
