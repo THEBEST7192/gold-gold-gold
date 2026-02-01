@@ -14,9 +14,7 @@ const operatorCache = new Map<
 >();
 const globalFetchTimestamps: number[] = [];
 let stopsCache: StopInfo[] | null = null;
-let stopsGrid:
-  | Map<string, StopInfo[]>
-  | null = null;
+let stopsGrid: Map<string, StopInfo[]> | null = null;
 const TILE_SIZE_DEG = 0.02;
 const requestorIdByOperator = new Map<string, string>();
 
@@ -120,7 +118,7 @@ const normalizeNumber = (value: unknown): number | null => {
   return Number.isFinite(numberValue) ? numberValue : null;
 };
 
-const normalizeArray = <T,>(value: T | T[] | undefined | null): T[] => {
+const normalizeArray = <T>(value: T | T[] | undefined | null): T[] => {
   if (!value) {
     return [];
   }
@@ -180,7 +178,9 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
       };
 
       const getLineName = () => {
-        const published = sanitizeLabel(normalizeText(journey.PublishedLineName));
+        const published = sanitizeLabel(
+          normalizeText(journey.PublishedLineName),
+        );
         if (published) return published;
 
         const lineName = sanitizeLabel(normalizeText(journey.LineName));
@@ -238,7 +238,9 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
         "Unknown stop";
       const currentStop = sanitizeLabel(currentStopRaw);
 
-      const lineRef = normalizeText((journey as Record<string, unknown>).LineRef);
+      const lineRef = normalizeText(
+        (journey as Record<string, unknown>).LineRef,
+      );
       const originRef =
         normalizeText((journey as Record<string, unknown>).OriginRef) ||
         normalizeText((journey as Record<string, unknown>).OriginName);
@@ -249,21 +251,30 @@ const extractBuses = (payload: Record<string, unknown>): BusInfo[] => {
         (journey as Record<string, unknown>).DatedVehicleJourneyRef,
       );
       const framedVehicleJourneyRef = normalizeText(
-        (journey as { FramedVehicleJourneyRef?: { DatedVehicleJourneyRef?: unknown } })
-          ?.FramedVehicleJourneyRef?.DatedVehicleJourneyRef,
+        (
+          journey as {
+            FramedVehicleJourneyRef?: { DatedVehicleJourneyRef?: unknown };
+          }
+        )?.FramedVehicleJourneyRef?.DatedVehicleJourneyRef,
       );
 
-      const stableComposite =
-        [lineRef, originRef, destinationStopId || destination, directionRef]
-          .filter(Boolean)
-          .join("|");
+      const stableComposite = [
+        lineRef,
+        originRef,
+        destinationStopId || destination,
+        directionRef,
+      ]
+        .filter(Boolean)
+        .join("|");
 
       const id =
         normalizeText(journey.VehicleRef) ||
         datedVehicleJourneyRef ||
         framedVehicleJourneyRef ||
         stableComposite ||
-        normalizeText((activity as { ItemIdentifier?: unknown }).ItemIdentifier) ||
+        normalizeText(
+          (activity as { ItemIdentifier?: unknown }).ItemIdentifier,
+        ) ||
         name;
 
       const bus: BusInfo = {
@@ -311,7 +322,10 @@ const fetchFromEntur = async (operator: string, clientName: string) => {
   return extractBuses(payload);
 };
 
-export const getAvailableBuses = async (operator: string, clientName: string) => {
+export const getAvailableBuses = async (
+  operator: string,
+  clientName: string,
+) => {
   const now = Date.now();
   const entry = operatorCache.get(operator) ?? {
     data: [],
@@ -372,7 +386,10 @@ export const getAvailableBuses = async (operator: string, clientName: string) =>
         if (bus.latitude === null || bus.longitude === null) {
           return { ...bus, nearbyStops: [] };
         }
-        const candidates = candidatesFor(bus.latitude as number, bus.longitude as number);
+        const candidates = candidatesFor(
+          bus.latitude as number,
+          bus.longitude as number,
+        );
         const nearbyStopsBase = candidates.filter((stop) => {
           const distance = distanceInMetersInternal(
             bus.latitude as number,
@@ -391,7 +408,10 @@ export const getAvailableBuses = async (operator: string, clientName: string) =>
             nearbyStops.find((stop) => stop.id === bus.destinationStopId) ??
             stops.find((stop) => stop.id === bus.destinationStopId) ??
             null;
-          if (destinationStop && !nearbyStops.some((stop) => stop.id === destinationStop!.id)) {
+          if (
+            destinationStop &&
+            !nearbyStops.some((stop) => stop.id === destinationStop!.id)
+          ) {
             nearbyStops.push(destinationStop);
           }
         }
@@ -400,10 +420,17 @@ export const getAvailableBuses = async (operator: string, clientName: string) =>
           const destinationName = bus.destination.toLowerCase();
           if (destinationName && destinationName !== "unknown destination") {
             destinationStop =
-              nearbyStops.find((stop) => stop.name.toLowerCase() === destinationName) ??
-              stops.find((stop) => stop.name.toLowerCase() === destinationName) ??
+              nearbyStops.find(
+                (stop) => stop.name.toLowerCase() === destinationName,
+              ) ??
+              stops.find(
+                (stop) => stop.name.toLowerCase() === destinationName,
+              ) ??
               null;
-            if (destinationStop && !nearbyStops.some((stop) => stop.id === destinationStop!.id)) {
+            if (
+              destinationStop &&
+              !nearbyStops.some((stop) => stop.id === destinationStop!.id)
+            ) {
               nearbyStops.push(destinationStop);
             }
           }
@@ -434,7 +461,10 @@ export const getAvailableBuses = async (operator: string, clientName: string) =>
               nearbyStops[index] = { ...stop, isDestination: true };
             }
           }
-          if (destinationStop.name && destinationStop.name !== bus.destination) {
+          if (
+            destinationStop.name &&
+            destinationStop.name !== bus.destination
+          ) {
             bus = { ...bus, destination: destinationStop.name };
           }
         }
@@ -479,4 +509,3 @@ export const getAvailableBuses = async (operator: string, clientName: string) =>
   operatorCache.set(operator, { ...entry, inFlight });
   return inFlight;
 };
-

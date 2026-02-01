@@ -11,7 +11,12 @@ type BusCardProps = {
   raceStarted: boolean;
 };
 
-export default function BusCard({ bus, distance, players, raceStarted }: BusCardProps) {
+export default function BusCard({
+  bus,
+  distance,
+  players,
+  raceStarted,
+}: BusCardProps) {
   const betters = players.filter((player) => player.betBusId === bus.id);
 
   return (

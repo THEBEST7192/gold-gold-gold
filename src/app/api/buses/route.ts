@@ -1,4 +1,4 @@
- import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getAvailableBuses } from "@/lib/entur";
 
 export async function GET(request: Request) {
@@ -6,7 +6,10 @@ export async function GET(request: Request) {
   const operator = searchParams.get("operator");
 
   if (!operator) {
-    return NextResponse.json({ error: "Operator is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Operator is required." },
+      { status: 400 },
+    );
   }
 
   const clientName = process.env.ENTUR_CLIENT_NAME;

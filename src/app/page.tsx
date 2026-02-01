@@ -2,15 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BusInfo, BusStats, Player } from "@/app/types";
+import BusCard from "@/components/BusCard";
+import PlayerBets from "@/components/PlayerBets";
+import RaceSetup from "@/components/RaceSetup";
 import {
   distanceInMeters,
   formatRemainingSeconds,
   getUniqueBuses,
   pickRandom,
 } from "@/lib/utils";
-import BusCard from "@/components/BusCard";
-import PlayerBets from "@/components/PlayerBets";
-import RaceSetup from "@/components/RaceSetup";
 
 export default function Home() {
   const [selectedOperator, setSelectedOperator] = useState("");
@@ -63,8 +63,6 @@ export default function Home() {
       window.removeEventListener("resize", updateWidth);
     };
   }, []);
-
-
 
   useEffect(() => {
     if (raceStarted) {
@@ -194,9 +192,12 @@ export default function Home() {
 
     const fetchOnce = async () => {
       try {
-        const response = await fetch(`/api/buses?operator=${selectedOperator}`, {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          `/api/buses?operator=${selectedOperator}`,
+          {
+            cache: "no-store",
+          },
+        );
         const payload = (await response.json()) as {
           availableBuses?: BusInfo[];
           updatedAt?: string;
@@ -240,7 +241,8 @@ export default function Home() {
         }
       } catch (error) {
         if (isCancelled) return;
-        const message = error instanceof Error ? error.message : "Request failed.";
+        const message =
+          error instanceof Error ? error.message : "Request failed.";
         setErrorMessage(message);
         if (!hasData) {
           setIsLoading(false);
@@ -277,7 +279,12 @@ export default function Home() {
   }, [selectedOperator, refreshTick]);
 
   useEffect(() => {
-    if (!selectedOperator || !hasInitialSelectionRef.current || raceStarted || availableBuses.length === 0) {
+    if (
+      !selectedOperator ||
+      !hasInitialSelectionRef.current ||
+      raceStarted ||
+      availableBuses.length === 0
+    ) {
       return;
     }
     const options = getUniqueBuses(availableBuses);
@@ -429,8 +436,9 @@ export default function Home() {
                       Players and bets
                     </p>
                     <p className="text-sm">
-                      Each player chooses one of the {busCount} buses. The leader is
-                      the one that has traveled the longest distance while you watch.
+                      Each player chooses one of the {busCount} buses. The
+                      leader is the one that has traveled the longest distance
+                      while you watch.
                     </p>
                   </div>
                   <div className="text-right text-sm">
@@ -486,7 +494,10 @@ export default function Home() {
                         setBusStats(() => {
                           const next: BusStats = {};
                           availableBuses.forEach((bus) => {
-                            if (bus.latitude === null || bus.longitude === null) {
+                            if (
+                              bus.latitude === null ||
+                              bus.longitude === null
+                            ) {
                               return;
                             }
                             next[bus.id] = {
@@ -498,7 +509,8 @@ export default function Home() {
                           return next;
                         });
                         const now = Date.now();
-                        const durationMilliseconds = betDurationMinutes * 60 * 1000;
+                        const durationMilliseconds =
+                          betDurationMinutes * 60 * 1000;
                         setBetEndTime(now + durationMilliseconds);
                         setBetRemainingSeconds(
                           Math.max(Math.floor(durationMilliseconds / 1000), 0),
@@ -526,7 +538,7 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                
+
                 <PlayerBets
                   players={players}
                   setPlayers={setPlayers}
@@ -538,7 +550,7 @@ export default function Home() {
                 />
 
                 {players.length < 12 ? (
-                  <div className="mt-2 flex justify-center">
+                  <div className="mt-3 flex justify-center">
                     <button
                       type="button"
                       onClick={() => {
@@ -554,7 +566,7 @@ export default function Home() {
                           ];
                         });
                       }}
-                      className="rounded-full border border-amber-900/40 bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-amber-900 transition hover:bg-amber-200"
+                      className="rounded-full border border-amber-900/20 bg-amber-100 px-6 py-2 text-xs font-bold uppercase tracking-[0.25em] text-amber-900 shadow-sm transition-all hover:bg-amber-200 hover:shadow-md active:scale-95"
                     >
                       Add player
                     </button>

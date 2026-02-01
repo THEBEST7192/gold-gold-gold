@@ -11,7 +11,12 @@ type BusMapProps = {
   trackEnabled: boolean;
 };
 
-export default function BusMap({ latitude, longitude, stops, trackEnabled }: BusMapProps) {
+export default function BusMap({
+  latitude,
+  longitude,
+  stops,
+  trackEnabled,
+}: BusMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
@@ -155,10 +160,12 @@ export default function BusMap({ latitude, longitude, stops, trackEnabled }: Bus
         index.set(stop.id, layer);
       } else {
         // Update position; if destination flag toggled, replace layer
-        const isMarker = "setLatLng" in (existing as any) && "getLatLng" in (existing as any);
+        const isMarker =
+          "setLatLng" in (existing as any) && "getLatLng" in (existing as any);
         if (isMarker) {
           (existing as any).setLatLng([stopLatitude, stopLongitude]);
-          const hadIcon = typeof (existing as any).options?.icon !== "undefined";
+          const hadIcon =
+            typeof (existing as any).options?.icon !== "undefined";
           if (hadIcon !== isDestination) {
             (stopsLayerRef.current as L.LayerGroup).removeLayer(existing);
             index.delete(stop.id);

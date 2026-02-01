@@ -23,7 +23,7 @@ export const formatRemainingSeconds = (value: number | null) => {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 };
 
-export const pickRandom = <T,>(items: T[], count: number): T[] => {
+export const pickRandom = <T>(items: T[], count: number): T[] => {
   const copy = [...items];
   for (let index = copy.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));

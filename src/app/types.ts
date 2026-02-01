@@ -25,5 +25,9 @@ export type Player = {
 
 export type BusStats = Record<
   string,
-  { distance: number; lastLatitude: number | null; lastLongitude: number | null }
+  {
+    distance: number;
+    lastLatitude: number | null;
+    lastLongitude: number | null;
+  }
 >;
